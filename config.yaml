@@ -1,0 +1,33 @@
+server:
+  port: 8080
+  host: "0.0.0.0"
+  base_url: "http://localhost:8080"
+
+aws:
+  region: "us-east-1"
+  s3_bucket: "my-terraform-registry"
+  s3_prefix: "registry"
+  # For local development with LocalStack, uncomment the following:
+  # endpoint: "http://localhost:4566"
+  # access_key_id: "test"
+  # secret_access_key: "test"
+
+auth:
+  enabled: true
+  method: "token"  # Options: "basic", "token", "iam"
+  
+  # For token authentication
+  token: "your-secret-token-here"
+  
+  # For basic authentication
+  # username: "admin"
+  # password: "password"
+  
+  # IP whitelist (optional)
+  # allowed_ips:
+  #   - "192.168.1.0/24"
+  #   - "10.0.0.0/8"
+
+log:
+  level: "info"  # Options: "debug", "info", "warn", "error"
+  format: "json"  # Options: "json", "text" 

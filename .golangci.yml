@@ -1,0 +1,28 @@
+version: "2"
+linters:
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - funlen
+        path: _test.go
+    paths:
+      - vendor$
+      - fixtures$
+      - output$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - vendor$
+      - fixtures$
+      - output$
+output:
+  formats:
+    code-climate:
+      path: ./gl-code-quality-report.json

@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  terraform-registry:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - REGISTRY_AWS_REGION=us-east-1
+      - REGISTRY_AWS_S3_BUCKET=terraform-registry
+      - REGISTRY_AWS_S3_PREFIX=registry
+      - REGISTRY_AWS_ENDPOINT=http://localstack:4566
+      - REGISTRY_AWS_ACCESS_KEY_ID=test
+      - REGISTRY_AWS_SECRET_ACCESS_KEY=test
+      - REGISTRY_AUTH_ENABLED=false  # Disabled for easy local testing
+      # - REGISTRY_AUTH_ENABLED=true  # Disabled for easy local testing
+      # - REGISTRY_AUTH_METHOD=token
+      # - REGISTRY_AUTH_TOKEN="your-secret-token-here"
+      - REGISTRY_LOG_LEVEL=debug
+      - REGISTRY_LOG_FORMAT=text
+      - REGISTRY_SERVER_BASE_URL=http://localhost:8080
+    depends_on:
+      localstack:
+        condition: service_healthy
+      init-localstack:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - terraform-registry
+
+  localstack:
+    container_name: terraform-registry-localstack
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+      - "4510-4559:4510-4559"  # External service port range
+    environment:
+      - SERVICES=s3
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - PERSISTENCE=1  # Enable data persistence
+    volumes:
+      - "./tmp/localstack:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - terraform-registry
+
+  init-localstack:
+    # Use Alpine with curl instead of AWS CLI for better ARM64 support
+    image: alpine:latest
+    depends_on:
+      localstack:
+        condition: service_healthy
+    volumes:
+      - ./scripts:/scripts
+      - ./examples:/examples
+    command: |
+      sh -c "
+        echo 'Installing curl and aws-cli...'
+        apk add --no-cache curl aws-cli
+        
+        echo 'Waiting for LocalStack to be ready...'
+        sleep 5
+        
+        export AWS_ACCESS_KEY_ID=test
+        export AWS_SECRET_ACCESS_KEY=test
+        export AWS_DEFAULT_REGION=us-east-1
+        
+        echo 'Creating S3 bucket...'
+        aws --endpoint-url=http://localstack:4566 s3 mb s3://terraform-registry
+        
+        echo 'Uploading sample data...'
+        if [ -d /examples ]; then
+          aws --endpoint-url=http://localstack:4566 s3 sync /examples s3://terraform-registry/registry --delete
+        fi
+        
+        echo 'Listing bucket contents...'
+        aws --endpoint-url=http://localstack:4566 s3 ls s3://terraform-registry/registry --recursive
+        
+        echo 'LocalStack initialization complete!'
+      "
+    networks:
+      - terraform-registry
+
+  # Optional: AWS CLI container for manual operations  
+  aws-cli:
+    image: alpine:latest
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    volumes:
+      - ./scripts:/scripts
+      - ./examples:/examples
+    entrypoint: /bin/sh
+    stdin_open: true
+    tty: true
+    depends_on:
+      - localstack
+    networks:
+      - terraform-registry
+    profiles:
+      - tools
+    command: |
+      sh -c "
+        apk add --no-cache aws-cli curl
+        exec /bin/sh
+      "
+
+networks:
+  terraform-registry:
+    driver: bridge 
+

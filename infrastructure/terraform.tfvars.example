@@ -1,0 +1,35 @@
+# AWS Region
+aws_region = "us-east-1"
+
+# VPC Endpoint Configuration
+# Option 1: Create a new VPC endpoint (default)
+create_vpc_endpoint = true
+vpc_id = "vpc-0123456789abcdef0"  # Required if creating new endpoint
+route_table_ids = [
+  "rtb-0123456789abcdef0",
+  "rtb-0123456789abcdef1",
+  "rtb-0123456789abcdef2"
+]
+
+# Option 2: Use an existing VPC endpoint (uncomment and set values)
+# create_vpc_endpoint = false
+# existing_vpc_endpoint_id = "vpce-0123456789abcdef0"
+
+# S3 Bucket Configuration
+# Must be globally unique across all AWS accounts
+bucket_name_prefix = "my-terraform-registry-prod"
+
+# Versioning (recommended for production)
+enable_versioning = true
+
+# Lifecycle Rules
+enable_lifecycle_rules              = true
+noncurrent_version_expiration_days = 90
+
+# Common Tags
+common_tags = {
+  Project     = "terraform-registry"
+  ManagedBy   = "terraform"
+  Environment = "production"
+  Owner       = "platform-team"
+}

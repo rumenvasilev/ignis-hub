@@ -1,0 +1,218 @@
+package handlers
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
+
+	"github.com/rumenvasilev/ignis-hub/internal/config"
+	"github.com/rumenvasilev/ignis-hub/internal/models"
+	"github.com/rumenvasilev/ignis-hub/internal/storage"
+)
+
+type RegistryHandlers struct {
+	storage *storage.S3Storage
+	config  *config.Config
+	logger  *logrus.Logger
+}
+
+func NewRegistryHandlers(storage *storage.S3Storage, cfg *config.Config, logger *logrus.Logger) *RegistryHandlers {
+	return &RegistryHandlers{
+		storage: storage,
+		config:  cfg,
+		logger:  logger,
+	}
+}
+
+// GetWellKnown handles /.well-known/terraform.json
+func (h *RegistryHandlers) GetWellKnown(c *gin.Context) {
+	baseURL := h.config.Server.BaseURL
+	if !strings.HasSuffix(baseURL, "/") {
+		baseURL += "/"
+	}
+
+	response := models.WellKnownResponse{
+		ModulesV1:   baseURL + "v1/modules/",
+		ProvidersV1: baseURL + "v1/providers/",
+	}
+
+	h.logger.WithField("endpoint", "well-known").Info("Served well-known response")
+	c.JSON(http.StatusOK, response)
+}
+
+// ListModuleVersions handles GET /v1/modules/{namespace}/{name}/{system}/versions
+func (h *RegistryHandlers) ListModuleVersions(c *gin.Context) {
+	var params models.ModuleParams
+	if err := c.ShouldBindUri(&params); err != nil {
+		h.logger.WithError(err).Error("Failed to bind module parameters")
+		c.JSON(http.StatusBadRequest, models.NotFoundResponse{
+			Errors: []string{"Invalid module parameters"},
+		})
+		return
+	}
+
+	h.logger.WithFields(logrus.Fields{
+		"namespace": params.Namespace,
+		"name":      params.Name,
+		"system":    params.System,
+	}).Info("Listing module versions")
+
+	metadata, err := h.storage.GetModuleVersions(c.Request.Context(), params.Namespace, params.Name, params.System)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to get module versions")
+		c.JSON(http.StatusNotFound, models.NotFoundResponse{
+			Errors: []string{"Module not found"},
+		})
+		return
+	}
+
+	response := models.ListModuleVersionsResponse{
+		Modules: []models.VersionsModule{
+			{
+				Versions: metadata.Versions,
+			},
+		},
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// GetModuleVersion handles GET /v1/modules/{namespace}/{name}/{system}/{version}/download
+func (h *RegistryHandlers) GetModuleVersion(c *gin.Context) {
+	var params models.ModuleParams
+	if err := c.ShouldBindUri(&params); err != nil {
+		h.logger.WithError(err).Error("Failed to bind module parameters")
+		c.JSON(http.StatusBadRequest, models.NotFoundResponse{
+			Errors: []string{"Invalid module parameters"},
+		})
+		return
+	}
+
+	h.logger.WithFields(logrus.Fields{
+		"namespace": params.Namespace,
+		"name":      params.Name,
+		"system":    params.System,
+		"version":   params.Version,
+	}).Info("Getting module download URL")
+
+	downloadURL, err := h.storage.GetModuleDownloadURL(c.Request.Context(), params.Namespace, params.Name, params.System, params.Version)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to get module download URL")
+		c.JSON(http.StatusNotFound, models.NotFoundResponse{
+			Errors: []string{"Module version not found"},
+		})
+		return
+	}
+
+	// Set the X-Terraform-Get header and return 204 No Content
+	c.Header("X-Terraform-Get", downloadURL)
+	c.Status(http.StatusNoContent)
+}
+
+// ListProviderVersions handles GET /v1/providers/{namespace}/{type}/versions
+func (h *RegistryHandlers) ListProviderVersions(c *gin.Context) {
+	var params models.ProviderParams
+	if err := c.ShouldBindUri(&params); err != nil {
+		h.logger.WithError(err).Error("Failed to bind provider parameters")
+		c.JSON(http.StatusBadRequest, models.NotFoundResponse{
+			Errors: []string{"Invalid provider parameters"},
+		})
+		return
+	}
+
+	h.logger.WithFields(logrus.Fields{
+		"namespace": params.Namespace,
+		"type":      params.Type,
+	}).Info("Listing provider versions")
+
+	metadata, err := h.storage.GetProviderVersions(c.Request.Context(), params.Namespace, params.Type)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to get provider versions")
+		c.JSON(http.StatusNotFound, models.NotFoundResponse{
+			Errors: []string{"Provider not found"},
+		})
+		return
+	}
+
+	response := models.ListProviderVersionsResponse{
+		Versions: metadata.Versions,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// GetProviderVersion handles GET /v1/providers/{namespace}/{type}/{version}/download/{os}/{arch}
+func (h *RegistryHandlers) GetProviderVersion(c *gin.Context) {
+	var params models.ProviderParams
+	if err := c.ShouldBindUri(&params); err != nil {
+		h.logger.WithError(err).Error("Failed to bind provider parameters")
+		c.JSON(http.StatusBadRequest, models.NotFoundResponse{
+			Errors: []string{"Invalid provider parameters"},
+		})
+		return
+	}
+
+	h.logger.WithFields(logrus.Fields{
+		"namespace": params.Namespace,
+		"type":      params.Type,
+		"version":   params.Version,
+		"os":        params.OS,
+		"arch":      params.Arch,
+	}).Info("Getting provider binary information")
+
+	binaryMetadata, err := h.storage.GetProviderBinary(c.Request.Context(), params.Namespace, params.Type, params.Version, params.OS, params.Arch)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to get provider binary")
+		c.JSON(http.StatusNotFound, models.NotFoundResponse{
+			Errors: []string{"Provider binary not found"},
+		})
+		return
+	}
+
+	response := models.GetProviderVersionResponse{
+		Arch:                binaryMetadata.Arch,
+		DownloadURL:         binaryMetadata.DownloadURL,
+		Filename:            binaryMetadata.Filename,
+		OS:                  binaryMetadata.OS,
+		Protocols:           binaryMetadata.Protocols,
+		Shasum:              binaryMetadata.Shasum,
+		ShasumsURL:          binaryMetadata.ShasumsURL,
+		ShasumsSignatureURL: binaryMetadata.ShasumsSignatureURL,
+		SigningKeys:         binaryMetadata.SigningKeys,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// HealthCheck endpoint for service health monitoring
+func (h *RegistryHandlers) HealthCheck(c *gin.Context) {
+	// Check S3 storage health
+	if err := h.storage.HealthCheck(c.Request.Context()); err != nil {
+		h.logger.WithError(err).Error("Health check failed")
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status": "unhealthy",
+			"error":  err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "healthy",
+	})
+}
+
+// Service discovery endpoint for Terraform provider registry protocol
+func (h *RegistryHandlers) ServiceDiscovery(c *gin.Context) {
+	// Extract hostname from request
+	hostname := c.Request.Host
+
+	discovery := map[string]interface{}{
+		"providers.v1": fmt.Sprintf("http://%s/v1/providers/", hostname),
+		"modules.v1":   fmt.Sprintf("http://%s/v1/modules/", hostname),
+	}
+
+	c.JSON(http.StatusOK, discovery)
+}
