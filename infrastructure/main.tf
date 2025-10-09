@@ -155,21 +155,6 @@ resource "aws_s3_bucket_policy" "registry" {
         }
       },
       {
-        Sid    = "AllowGeneralReadAccessTEMP"
-        Effect = "Allow"
-        Principal = {
-          AWS = "arn:aws:iam::736335200020:root"
-        }
-        Action = [
-          "s3:GetObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          aws_s3_bucket.registry.arn,
-          "${aws_s3_bucket.registry.arn}/*"
-        ]
-      },
-      {
         Sid    = "DenyInsecureTransport"
         Effect = "Deny"
         Principal = "*"
