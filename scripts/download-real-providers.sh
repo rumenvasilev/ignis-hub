@@ -12,15 +12,21 @@ NC='\033[0m'
 # Default Configuration
 EXAMPLES_DIR="examples"
 PROVIDERS_REGISTRY="https://registry.terraform.io"
-USE_S3=false
+STORAGE_TYPE="localstack"  # localstack, s3, or gcs
 S3_BUCKET="test-roomba-my-terraform-registry"
 S3_REGION="eu-west-1"
+GCS_BUCKET="test-roomba-my-terraform-registry"
+GCS_LOCATION="eu"
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         --use-s3)
-            USE_S3=true
+            STORAGE_TYPE="s3"
+            shift
+            ;;
+        --use-gcs)
+            STORAGE_TYPE="gcs"
             shift
             ;;
         --s3-bucket)
@@ -31,13 +37,26 @@ while [[ $# -gt 0 ]]; do
             S3_REGION="$2"
             shift 2
             ;;
+        --gcs-bucket)
+            GCS_BUCKET="$2"
+            shift 2
+            ;;
+        --gcs-location)
+            GCS_LOCATION="$2"
+            shift 2
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --use-s3              Use S3 URLs instead of LocalStack URLs"
+            echo "  --use-s3              Use AWS S3 URLs"
             echo "  --s3-bucket BUCKET    S3 bucket name (default: test-roomba-my-terraform-registry)"
-            echo "  --s3-region REGION    S3 region (default: us-east-1)"
+            echo "  --s3-region REGION    S3 region (default: eu-west-1)"
+            echo ""
+            echo "  --use-gcs             Use Google Cloud Storage URLs"
+            echo "  --gcs-bucket BUCKET   GCS bucket name (required with --use-gcs)"
+            echo "  --gcs-location LOC    GCS location (default: eu)"
+            echo ""
             echo "  --help, -h            Show this help message"
             echo ""
             echo "Examples:"
@@ -45,10 +64,10 @@ while [[ $# -gt 0 ]]; do
             echo "  $0"
             echo ""
             echo "  # Download with S3 URLs"
-            echo "  $0 --use-s3"
-            echo ""
-            echo "  # Download with custom S3 bucket"
             echo "  $0 --use-s3 --s3-bucket my-bucket --s3-region eu-west-1"
+            echo ""
+            echo "  # Download with GCS URLs"
+            echo "  $0 --use-gcs --gcs-bucket my-bucket"
             exit 0
             ;;
         *)
@@ -59,14 +78,27 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Validate GCS configuration
+if [ "$STORAGE_TYPE" = "gcs" ] && [ -z "$GCS_BUCKET" ]; then
+    echo -e "${RED}❌ GCS bucket name is required when using --use-gcs${NC}"
+    echo "Use: $0 --use-gcs --gcs-bucket YOUR_BUCKET_NAME"
+    exit 1
+fi
+
 echo "📦 Downloading Real Terraform Provider Binaries"
 echo "=============================================="
 
-if [ "$USE_S3" = true ]; then
-    echo -e "${BLUE}🪣 Using S3 URLs: s3://${S3_BUCKET} (${S3_REGION})${NC}"
-else
-    echo -e "${BLUE}🐳 Using LocalStack URLs${NC}"
-fi
+case "$STORAGE_TYPE" in
+    s3)
+        echo -e "${BLUE}🪣 Using AWS S3 URLs: s3://${S3_BUCKET} (${S3_REGION})${NC}"
+        ;;
+    gcs)
+        echo -e "${BLUE}☁️  Using GCS URLs: gs://${GCS_BUCKET} (${GCS_LOCATION})${NC}"
+        ;;
+    localstack)
+        echo -e "${BLUE}🐳 Using LocalStack URLs${NC}"
+        ;;
+esac
 echo ""
 
 # Provider definitions - using a different approach for better compatibility
@@ -169,13 +201,19 @@ download_provider() {
     # Create metadata.json file
     echo "📝 Creating metadata.json..."
     
-    # Determine base URL based on USE_S3 flag
+    # Determine base URL based on storage type
     local base_url
-    if [ "$USE_S3" = true ]; then
-        base_url="https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/registry/providers"
-    else
-        base_url="http://localhost:4566/terraform-registry/registry/providers"
-    fi
+    case "$STORAGE_TYPE" in
+        s3)
+            base_url="https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/registry/providers"
+            ;;
+        gcs)
+            base_url="https://storage.googleapis.com/${GCS_BUCKET}/registry/providers"
+            ;;
+        localstack)
+            base_url="http://localhost:4566/terraform-registry/registry/providers"
+            ;;
+    esac
     
     # Create metadata using jq to properly escape the signing keys
     jq -n \
@@ -303,20 +341,41 @@ echo "   • Real provider binaries from registry.terraform.io"
 echo "   • Platform-specific metadata.json files"
 echo "   • Provider index metadata files"
 
-if [ "$USE_S3" = true ]; then
-    echo "   • Metadata configured for S3: s3://${S3_BUCKET}"
-else
-    echo "   • Metadata configured for LocalStack"
-fi
+case "$STORAGE_TYPE" in
+    s3)
+        echo "   • Metadata configured for AWS S3: s3://${S3_BUCKET}"
+        ;;
+    gcs)
+        echo "   • Metadata configured for GCS: gs://${GCS_BUCKET}"
+        ;;
+    localstack)
+        echo "   • Metadata configured for LocalStack"
+        ;;
+esac
 
 echo ""
 echo "🔄 Next steps:"
-if [ "$USE_S3" = true ]; then
-    echo "   1. Upload to S3: ./scripts/upload-to-s3.sh --bucket ${S3_BUCKET} --region ${S3_REGION}"
-    echo "   2. Configure your registry to use S3 backend"
-    echo "   3. Test Terraform integration"
-else
-    echo "   1. Upload to LocalStack: ./scripts/manage-localstack.sh upload"
-    echo "   2. Test the registry: ./scripts/test-api.sh"
-    echo "   3. Test Terraform integration: ./scripts/setup-terraform.sh"
-fi 
+case "$STORAGE_TYPE" in
+    s3)
+        echo "   1. Upload to S3: ./scripts/upload-to-s3.sh --bucket ${S3_BUCKET} --region ${S3_REGION}"
+        echo "   2. Start registry with S3: docker run -p 8080:8080 \\"
+        echo "      -e REGISTRY_AWS_S3_BUCKET=${S3_BUCKET} \\"
+        echo "      -e REGISTRY_AWS_REGION=${S3_REGION} \\"
+        echo "      ignis-hub:latest --provider aws"
+        echo "   3. Test Terraform integration"
+        ;;
+    gcs)
+        echo "   1. Upload to GCS: gsutil -m rsync -r ${EXAMPLES_DIR}/providers gs://${GCS_BUCKET}/registry/providers"
+        echo "   2. Start registry with GCS: docker run -p 8080:8080 \\"
+        echo "      -e REGISTRY_GCS_BUCKET=${GCS_BUCKET} \\"
+        echo "      -v /path/to/credentials.json:/creds.json:ro \\"
+        echo "      -e REGISTRY_GCP_CREDENTIALS_FILE=/creds.json \\"
+        echo "      ignis-hub:latest --provider gcp"
+        echo "   3. Test Terraform integration"
+        ;;
+    localstack)
+        echo "   1. Upload to LocalStack: ./scripts/manage-localstack.sh upload"
+        echo "   2. Test the registry: ./scripts/test-api.sh"
+        echo "   3. Test Terraform integration: ./scripts/setup-terraform.sh"
+        ;;
+esac 
