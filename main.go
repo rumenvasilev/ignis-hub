@@ -19,6 +19,8 @@ import (
 	"github.com/rumenvasilev/ignis-hub/internal/storage"
 )
 
+var Version = "dev"
+
 func main() {
 	// Parse command-line flags
 	provider := flag.String("provider", "aws", "Cloud provider to use (aws or gcp)")
@@ -174,7 +176,7 @@ func setupRoutes(router *gin.Engine, storage storage.Storage, cfg *config.Config
 	router.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"name":    "Terraform Registry API",
-			"version": "1.0.0",
+			"version": Version,
 			"status":  "running",
 			"endpoints": gin.H{
 				"well_known": "/.well-known/terraform.json",
