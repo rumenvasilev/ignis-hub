@@ -69,19 +69,19 @@ func Load(provider string) (*Config, error) {
 	viper.SetEnvPrefix("REGISTRY")
 
 	// Explicitly bind nested AWS environment variables that Viper doesn't auto-map
-	viper.BindEnv("aws.endpoint", "REGISTRY_AWS_ENDPOINT")                   //nolint:errcheck
-	viper.BindEnv("aws.access_key_id", "REGISTRY_AWS_ACCESS_KEY_ID")         //nolint:errcheck
-	viper.BindEnv("aws.secret_access_key", "REGISTRY_AWS_SECRET_ACCESS_KEY") //nolint:errcheck
-	viper.BindEnv("aws.session_token", "REGISTRY_AWS_SESSION_TOKEN")         //nolint:errcheck
-	viper.BindEnv("aws.s3_bucket", "REGISTRY_AWS_S3_BUCKET")                 //nolint:errcheck
-	viper.BindEnv("aws.s3_prefix", "REGISTRY_AWS_S3_PREFIX")                 //nolint:errcheck
-	viper.BindEnv("aws.region", "REGISTRY_AWS_REGION")                       //nolint:errcheck
+	_ = viper.BindEnv("aws.endpoint", "REGISTRY_AWS_ENDPOINT")
+	_ = viper.BindEnv("aws.access_key_id", "REGISTRY_AWS_ACCESS_KEY_ID")
+	_ = viper.BindEnv("aws.secret_access_key", "REGISTRY_AWS_SECRET_ACCESS_KEY")
+	_ = viper.BindEnv("aws.session_token", "REGISTRY_AWS_SESSION_TOKEN")
+	_ = viper.BindEnv("aws.s3_bucket", "REGISTRY_AWS_S3_BUCKET")
+	_ = viper.BindEnv("aws.s3_prefix", "REGISTRY_AWS_S3_PREFIX")
+	_ = viper.BindEnv("aws.region", "REGISTRY_AWS_REGION")
 
 	// Explicitly bind nested GCP environment variables that Viper doesn't auto-map
-	viper.BindEnv("gcp.gcs_bucket", "REGISTRY_GCS_BUCKET")                 //nolint:errcheck
-	viper.BindEnv("gcp.gcs_prefix", "REGISTRY_GCS_PREFIX")                 //nolint:errcheck
-	viper.BindEnv("gcp.endpoint", "REGISTRY_GCP_ENDPOINT")                 //nolint:errcheck
-	viper.BindEnv("gcp.credentials_file", "REGISTRY_GCP_CREDENTIALS_FILE") //nolint:errcheck
+	_ = viper.BindEnv("gcp.gcs_bucket", "REGISTRY_GCS_BUCKET")
+	_ = viper.BindEnv("gcp.gcs_prefix", "REGISTRY_GCS_PREFIX")
+	_ = viper.BindEnv("gcp.endpoint", "REGISTRY_GCP_ENDPOINT")
+	_ = viper.BindEnv("gcp.credentials_file", "REGISTRY_GCP_CREDENTIALS_FILE")
 
 	// Try to read config file
 	if err := viper.ReadInConfig(); err != nil {
