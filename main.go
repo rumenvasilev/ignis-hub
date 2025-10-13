@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 
 	"github.com/rumenvasilev/ignis-hub/internal/config"
 	"github.com/rumenvasilev/ignis-hub/internal/handlers"
@@ -22,7 +22,8 @@ func main() {
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to load configuration")
+		slog.Error("Failed to load configuration", "error", err)
+		os.Exit(1)
 	}
 
 	// Setup logger
@@ -32,14 +33,16 @@ func main() {
 	// Initialize S3 storage
 	s3Storage, err := storage.NewS3Storage(cfg, logger)
 	if err != nil {
-		logger.WithError(err).Fatal("Failed to initialize S3 storage")
+		logger.Error("Failed to initialize S3 storage", "error", err)
+		os.Exit(1)
 	}
 
 	// Test storage connection
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := s3Storage.HealthCheck(ctx); err != nil {
-		logger.WithError(err).Fatal("S3 storage health check failed")
+		logger.Error("S3 storage health check failed", "error", err)
+		os.Exit(1)
 	}
 	logger.Info("S3 storage connection verified")
 
@@ -71,13 +74,13 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		logger.WithFields(logrus.Fields{
-			"host": cfg.Server.Host,
-			"port": cfg.Server.Port,
-		}).Info("Starting HTTP server")
+		logger.Info("Starting HTTP server",
+			"host", cfg.Server.Host,
+			"port", cfg.Server.Port)
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.WithError(err).Fatal("Failed to start server")
+			logger.Error("Failed to start server", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -92,38 +95,44 @@ func main() {
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		logger.WithError(err).Error("Server forced to shutdown")
+		logger.Error("Server forced to shutdown", "error", err)
 	} else {
 		logger.Info("Server shutdown completed")
 	}
 }
 
-func setupLogger(cfg *config.Config) *logrus.Logger {
-	logger := logrus.New()
-
-	// Set log level
-	level, err := logrus.ParseLevel(cfg.Log.Level)
-	if err != nil {
-		level = logrus.InfoLevel
+func setupLogger(cfg *config.Config) *slog.Logger {
+	// Parse log level
+	var level slog.Level
+	switch cfg.Log.Level {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn", "warning":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
 	}
-	logger.SetLevel(level)
 
-	// Set log format
+	// Create handler based on format
+	var handler slog.Handler
+	opts := &slog.HandlerOptions{
+		Level: level,
+	}
+
 	if cfg.Log.Format == "json" {
-		logger.SetFormatter(&logrus.JSONFormatter{
-			TimestampFormat: time.RFC3339,
-		})
+		handler = slog.NewJSONHandler(os.Stdout, opts)
 	} else {
-		logger.SetFormatter(&logrus.TextFormatter{
-			TimestampFormat: time.RFC3339,
-			FullTimestamp:   true,
-		})
+		handler = slog.NewTextHandler(os.Stdout, opts)
 	}
 
-	return logger
+	return slog.New(handler)
 }
 
-func setupMiddleware(router *gin.Engine, cfg *config.Config, logger *logrus.Logger) {
+func setupMiddleware(router *gin.Engine, cfg *config.Config, logger *slog.Logger) {
 	// Recovery middleware
 	router.Use(gin.Recovery())
 
@@ -141,7 +150,7 @@ func setupMiddleware(router *gin.Engine, cfg *config.Config, logger *logrus.Logg
 	router.Use(authMiddleware.Auth())
 }
 
-func setupRoutes(router *gin.Engine, storage *storage.S3Storage, cfg *config.Config, logger *logrus.Logger) {
+func setupRoutes(router *gin.Engine, storage storage.Storage, cfg *config.Config, logger *slog.Logger) {
 	// Initialize handlers
 	registryHandlers := handlers.NewRegistryHandlers(storage, cfg, logger)
 

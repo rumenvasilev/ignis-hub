@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 
 	"github.com/rumenvasilev/ignis-hub/internal/config"
 	"github.com/rumenvasilev/ignis-hub/internal/models"
@@ -14,12 +14,12 @@ import (
 )
 
 type RegistryHandlers struct {
-	storage *storage.S3Storage
+	storage storage.Storage
 	config  *config.Config
-	logger  *logrus.Logger
+	logger  *slog.Logger
 }
 
-func NewRegistryHandlers(storage *storage.S3Storage, cfg *config.Config, logger *logrus.Logger) *RegistryHandlers {
+func NewRegistryHandlers(storage storage.Storage, cfg *config.Config, logger *slog.Logger) *RegistryHandlers {
 	return &RegistryHandlers{
 		storage: storage,
 		config:  cfg,
@@ -39,7 +39,7 @@ func (h *RegistryHandlers) GetWellKnown(c *gin.Context) {
 		ProvidersV1: baseURL + "v1/providers/",
 	}
 
-	h.logger.WithField("endpoint", "well-known").Info("Served well-known response")
+	h.logger.Info("Served well-known response", "endpoint", "well-known")
 	c.JSON(http.StatusOK, response)
 }
 
@@ -47,22 +47,21 @@ func (h *RegistryHandlers) GetWellKnown(c *gin.Context) {
 func (h *RegistryHandlers) ListModuleVersions(c *gin.Context) {
 	var params models.ModuleParams
 	if err := c.ShouldBindUri(&params); err != nil {
-		h.logger.WithError(err).Error("Failed to bind module parameters")
+		h.logger.Error("Failed to bind module parameters", "error", err)
 		c.JSON(http.StatusBadRequest, models.NotFoundResponse{
 			Errors: []string{"Invalid module parameters"},
 		})
 		return
 	}
 
-	h.logger.WithFields(logrus.Fields{
-		"namespace": params.Namespace,
-		"name":      params.Name,
-		"system":    params.System,
-	}).Info("Listing module versions")
+	h.logger.Info("Listing module versions",
+		"namespace", params.Namespace,
+		"name", params.Name,
+		"system", params.System)
 
 	metadata, err := h.storage.GetModuleVersions(c.Request.Context(), params.Namespace, params.Name, params.System)
 	if err != nil {
-		h.logger.WithError(err).Error("Failed to get module versions")
+		h.logger.Error("Failed to get module versions", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
 			Errors: []string{"Module not found"},
 		})
@@ -84,23 +83,22 @@ func (h *RegistryHandlers) ListModuleVersions(c *gin.Context) {
 func (h *RegistryHandlers) GetModuleVersion(c *gin.Context) {
 	var params models.ModuleParams
 	if err := c.ShouldBindUri(&params); err != nil {
-		h.logger.WithError(err).Error("Failed to bind module parameters")
+		h.logger.Error("Failed to bind module parameters", "error", err)
 		c.JSON(http.StatusBadRequest, models.NotFoundResponse{
 			Errors: []string{"Invalid module parameters"},
 		})
 		return
 	}
 
-	h.logger.WithFields(logrus.Fields{
-		"namespace": params.Namespace,
-		"name":      params.Name,
-		"system":    params.System,
-		"version":   params.Version,
-	}).Info("Getting module download URL")
+	h.logger.Info("Getting module download URL",
+		"namespace", params.Namespace,
+		"name", params.Name,
+		"system", params.System,
+		"version", params.Version)
 
 	downloadURL, err := h.storage.GetModuleDownloadURL(c.Request.Context(), params.Namespace, params.Name, params.System, params.Version)
 	if err != nil {
-		h.logger.WithError(err).Error("Failed to get module download URL")
+		h.logger.Error("Failed to get module download URL", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
 			Errors: []string{"Module version not found"},
 		})
@@ -116,21 +114,20 @@ func (h *RegistryHandlers) GetModuleVersion(c *gin.Context) {
 func (h *RegistryHandlers) ListProviderVersions(c *gin.Context) {
 	var params models.ProviderParams
 	if err := c.ShouldBindUri(&params); err != nil {
-		h.logger.WithError(err).Error("Failed to bind provider parameters")
+		h.logger.Error("Failed to bind provider parameters", "error", err)
 		c.JSON(http.StatusBadRequest, models.NotFoundResponse{
 			Errors: []string{"Invalid provider parameters"},
 		})
 		return
 	}
 
-	h.logger.WithFields(logrus.Fields{
-		"namespace": params.Namespace,
-		"type":      params.Type,
-	}).Info("Listing provider versions")
+	h.logger.Info("Listing provider versions",
+		"namespace", params.Namespace,
+		"type", params.Type)
 
 	metadata, err := h.storage.GetProviderVersions(c.Request.Context(), params.Namespace, params.Type)
 	if err != nil {
-		h.logger.WithError(err).Error("Failed to get provider versions")
+		h.logger.Error("Failed to get provider versions", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
 			Errors: []string{"Provider not found"},
 		})
@@ -148,24 +145,23 @@ func (h *RegistryHandlers) ListProviderVersions(c *gin.Context) {
 func (h *RegistryHandlers) GetProviderVersion(c *gin.Context) {
 	var params models.ProviderParams
 	if err := c.ShouldBindUri(&params); err != nil {
-		h.logger.WithError(err).Error("Failed to bind provider parameters")
+		h.logger.Error("Failed to bind provider parameters", "error", err)
 		c.JSON(http.StatusBadRequest, models.NotFoundResponse{
 			Errors: []string{"Invalid provider parameters"},
 		})
 		return
 	}
 
-	h.logger.WithFields(logrus.Fields{
-		"namespace": params.Namespace,
-		"type":      params.Type,
-		"version":   params.Version,
-		"os":        params.OS,
-		"arch":      params.Arch,
-	}).Info("Getting provider binary information")
+	h.logger.Info("Getting provider binary information",
+		"namespace", params.Namespace,
+		"type", params.Type,
+		"version", params.Version,
+		"os", params.OS,
+		"arch", params.Arch)
 
 	binaryMetadata, err := h.storage.GetProviderBinary(c.Request.Context(), params.Namespace, params.Type, params.Version, params.OS, params.Arch)
 	if err != nil {
-		h.logger.WithError(err).Error("Failed to get provider binary")
+		h.logger.Error("Failed to get provider binary", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
 			Errors: []string{"Provider binary not found"},
 		})
@@ -191,7 +187,7 @@ func (h *RegistryHandlers) GetProviderVersion(c *gin.Context) {
 func (h *RegistryHandlers) HealthCheck(c *gin.Context) {
 	// Check S3 storage health
 	if err := h.storage.HealthCheck(c.Request.Context()); err != nil {
-		h.logger.WithError(err).Error("Health check failed")
+		h.logger.Error("Health check failed", "error", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status": "unhealthy",
 			"error":  err.Error(),

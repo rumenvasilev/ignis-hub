@@ -2,22 +2,22 @@ package middleware
 
 import (
 	"crypto/subtle"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 
 	"github.com/rumenvasilev/ignis-hub/internal/config"
 )
 
 type AuthMiddleware struct {
 	config *config.Config
-	logger *logrus.Logger
+	logger *slog.Logger
 }
 
-func NewAuthMiddleware(cfg *config.Config, logger *logrus.Logger) *AuthMiddleware {
+func NewAuthMiddleware(cfg *config.Config, logger *slog.Logger) *AuthMiddleware {
 	return &AuthMiddleware{
 		config: cfg,
 		logger: logger,
@@ -37,7 +37,7 @@ func (a *AuthMiddleware) Auth() gin.HandlerFunc {
 		if len(a.config.Auth.AllowedIPs) > 0 {
 			clientIP := c.ClientIP()
 			if !a.isIPAllowed(clientIP) {
-				a.logger.WithField("client_ip", clientIP).Warn("IP not in whitelist")
+				a.logger.Warn("IP not in whitelist", "client_ip", clientIP)
 				c.JSON(http.StatusForbidden, gin.H{
 					"error": "Access denied",
 				})
@@ -161,7 +161,7 @@ func (a *AuthMiddleware) isIPAllowed(clientIP string) bool {
 			// CIDR range
 			_, cidr, err := net.ParseCIDR(allowedIP)
 			if err != nil {
-				a.logger.WithError(err).WithField("cidr", allowedIP).Error("Invalid CIDR in allowed IPs")
+				a.logger.Error("Invalid CIDR in allowed IPs", "error", err, "cidr", allowedIP)
 				continue
 			}
 			if cidr.Contains(net.ParseIP(clientIP)) {

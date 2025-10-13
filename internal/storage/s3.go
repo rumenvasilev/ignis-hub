@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/sirupsen/logrus"
 
 	registryConfig "github.com/rumenvasilev/ignis-hub/internal/config"
 	"github.com/rumenvasilev/ignis-hub/internal/models"
@@ -19,10 +19,10 @@ type S3Storage struct {
 	client *s3.Client
 	bucket string
 	prefix string
-	logger *logrus.Logger
+	logger *slog.Logger
 }
 
-func NewS3Storage(cfg *registryConfig.Config, logger *logrus.Logger) (*S3Storage, error) {
+func NewS3Storage(cfg *registryConfig.Config, logger *slog.Logger) (*S3Storage, error) {
 	// Configure AWS SDK with explicit credentials first
 	var awsConfig aws.Config
 	var err error
@@ -91,7 +91,7 @@ func (s *S3Storage) GetModuleVersions(ctx context.Context, namespace, name, syst
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		s.logger.WithError(err).WithField("key", key).Error("Failed to get module metadata")
+		s.logger.Error("Failed to get module metadata", "error", err, "key", key)
 		return nil, fmt.Errorf("module not found: %w", err)
 	}
 	defer result.Body.Close() //nolint:errcheck
@@ -122,12 +122,12 @@ func (s *S3Storage) GetModuleDownloadURL(ctx context.Context, namespace, name, s
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		s.logger.WithError(err).WithFields(logrus.Fields{
-			"namespace": namespace,
-			"name":      name,
-			"system":    system,
-			"version":   version,
-		}).Error("Module version not found")
+		s.logger.Error("Module version not found",
+			"error", err,
+			"namespace", namespace,
+			"name", name,
+			"system", system,
+			"version", version)
 		return "", fmt.Errorf("module version not found: %w", err)
 	}
 
@@ -153,7 +153,7 @@ func (s *S3Storage) GetProviderVersions(ctx context.Context, namespace, typeName
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		s.logger.WithError(err).WithField("key", key).Error("Failed to get provider metadata")
+		s.logger.Error("Failed to get provider metadata", "error", err, "key", key)
 		return nil, fmt.Errorf("provider not found: %w", err)
 	}
 	defer result.Body.Close() //nolint:errcheck
@@ -179,7 +179,7 @@ func (s *S3Storage) GetProviderBinary(ctx context.Context, namespace, typeName, 
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		s.logger.WithError(err).WithField("key", key).Error("Failed to get provider binary metadata")
+		s.logger.Error("Failed to get provider binary metadata", "error", err, "key", key)
 		return nil, fmt.Errorf("provider binary not found: %w", err)
 	}
 	defer result.Body.Close() //nolint:errcheck
