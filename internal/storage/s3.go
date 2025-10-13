@@ -22,7 +22,7 @@ type S3Storage struct {
 	logger *slog.Logger
 }
 
-func NewS3Storage(cfg *registryConfig.Config, logger *slog.Logger) (*S3Storage, error) {
+func newS3Storage(cfg *registryConfig.Config, logger *slog.Logger) (*S3Storage, error) {
 	// Configure AWS SDK with explicit credentials first
 	var awsConfig aws.Config
 	var err error

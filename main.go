@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -19,8 +20,18 @@ import (
 )
 
 func main() {
+	// Parse command-line flags
+	provider := flag.String("provider", "aws", "Cloud provider to use (aws or gcp)")
+	flag.Parse()
+
+	// Validate provider flag
+	if *provider != "aws" && *provider != "gcp" {
+		slog.Error("Invalid provider specified", "provider", *provider, "valid_options", "aws, gcp")
+		os.Exit(1)
+	}
+
 	// Load configuration
-	cfg, err := config.Load()
+	cfg, err := config.Load(*provider)
 	if err != nil {
 		slog.Error("Failed to load configuration", "error", err)
 		os.Exit(1)
@@ -28,23 +39,24 @@ func main() {
 
 	// Setup logger
 	logger := setupLogger(cfg)
-	logger.Info("Starting Terraform Registry Server")
+	logger.Info("Starting Terraform Registry Server", "provider", *provider)
 
-	// Initialize S3 storage
-	s3Storage, err := storage.NewS3Storage(cfg, logger)
+	// Initialize storage based on provider
+	storageProvider, err := storage.NewStorage(cfg, logger)
 	if err != nil {
-		logger.Error("Failed to initialize S3 storage", "error", err)
+		logger.Error("Failed to initialize storage", "error", err)
 		os.Exit(1)
 	}
+	logger.Info("Initialized storage", "provider", *provider)
 
 	// Test storage connection
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := s3Storage.HealthCheck(ctx); err != nil {
-		logger.Error("S3 storage health check failed", "error", err)
+	if err := storageProvider.HealthCheck(ctx); err != nil {
+		logger.Error("Storage health check failed", "error", err, "provider", *provider)
 		os.Exit(1)
 	}
-	logger.Info("S3 storage connection verified")
+	logger.Info("Storage connection verified", "provider", *provider)
 
 	// Setup Gin
 	if cfg.Log.Level == "debug" {
@@ -60,7 +72,7 @@ func main() {
 	setupMiddleware(router, cfg, logger)
 
 	// Setup routes
-	setupRoutes(router, s3Storage, cfg, logger)
+	setupRoutes(router, storageProvider, cfg, logger)
 
 	// Create HTTP server
 	srv := &http.Server{
