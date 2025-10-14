@@ -71,6 +71,9 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
 
     steps:
     - name: Checkout code
@@ -80,9 +83,11 @@ jobs:
       uses: securego/gosec@master
       with:
         args: '-no-fail -fmt sarif -out results.sarif ./...'
+      continue-on-error: true
 
     - name: Upload SARIF file
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
+      if: always()
       with:
         sarif_file: results.sarif
 
