@@ -1,8 +1,6 @@
 module github.com/rumenvasilev/ignis-hub
 
-go 1.23
-
-toolchain go1.23.2
+go 1.25.3
 
 require (
 	cloud.google.com/go/storage v1.35.1
@@ -10,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.29.17
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.84.0
 	github.com/gin-gonic/gin v1.10.1
+	github.com/matryer/is v1.4.1
 	github.com/spf13/viper v1.18.2
 	google.golang.org/api v0.153.0
 )
@@ -56,7 +55,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
-	github.com/matryer/is v1.4.1 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
