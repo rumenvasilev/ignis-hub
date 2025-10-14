@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 func TestNewStorage_AWS(t *testing.T) {
 	is := is.New(t)
+	ctx := context.Background()
 	cfg := &config.Config{
 		Provider: "aws",
 		AWS: config.AWSConfig{
@@ -23,7 +25,7 @@ func TestNewStorage_AWS(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	storage, err := NewStorage(cfg, logger)
+	storage, err := NewStorage(ctx, cfg, logger)
 	is.NoErr(err) // NewStorage should succeed for AWS
 
 	is.True(storage != nil) // storage should not be nil
@@ -37,6 +39,7 @@ func TestNewStorage_AWS(t *testing.T) {
 
 func TestNewStorage_GCP(t *testing.T) {
 	is := is.New(t)
+	ctx := context.Background()
 	// Note: This test will fail without valid GCP credentials
 	// In a real CI/CD environment, you'd mock the GCS client
 	cfg := &config.Config{
@@ -48,7 +51,7 @@ func TestNewStorage_GCP(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	storage, err := NewStorage(cfg, logger)
+	storage, err := NewStorage(ctx, cfg, logger)
 
 	// We expect this might fail without credentials, but we're testing the factory logic
 	if err != nil {
@@ -68,12 +71,13 @@ func TestNewStorage_GCP(t *testing.T) {
 
 func TestNewStorage_InvalidProvider(t *testing.T) {
 	is := is.New(t)
+	ctx := context.Background()
 	cfg := &config.Config{
 		Provider: "azure", // Invalid provider
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	storage, err := NewStorage(cfg, logger)
+	storage, err := NewStorage(ctx, cfg, logger)
 	is.True(err != nil)                              // NewStorage should fail for invalid provider
 	is.True(storage == nil)                          // storage should be nil for invalid provider
 	is.Equal(err.Error(), "invalid provider: azure") // error message should match
@@ -81,12 +85,13 @@ func TestNewStorage_InvalidProvider(t *testing.T) {
 
 func TestNewStorage_EmptyProvider(t *testing.T) {
 	is := is.New(t)
+	ctx := context.Background()
 	cfg := &config.Config{
 		Provider: "",
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	storage, err := NewStorage(cfg, logger)
+	storage, err := NewStorage(ctx, cfg, logger)
 	is.True(err != nil)     // NewStorage should fail for empty provider
 	is.True(storage == nil) // storage should be nil for empty provider
 }

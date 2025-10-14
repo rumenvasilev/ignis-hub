@@ -21,8 +21,7 @@ type GCSStorage struct {
 	logger *slog.Logger
 }
 
-func newGCSStorage(cfg *registryConfig.Config, logger *slog.Logger) (*GCSStorage, error) {
-	ctx := context.Background()
+func newGCSStorage(ctx context.Context, cfg *registryConfig.Config, logger *slog.Logger) (*GCSStorage, error) {
 	var opts []option.ClientOption
 
 	// Use custom endpoint for local development

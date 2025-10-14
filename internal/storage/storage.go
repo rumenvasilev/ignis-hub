@@ -17,12 +17,12 @@ type Storage interface {
 	HealthCheck(ctx context.Context) error
 }
 
-func NewStorage(cfg *config.Config, logger *slog.Logger) (Storage, error) {
+func NewStorage(ctx context.Context, cfg *config.Config, logger *slog.Logger) (Storage, error) {
 	switch cfg.Provider {
 	case "aws":
-		return newS3Storage(cfg, logger)
+		return newS3Storage(ctx, cfg, logger)
 	case "gcp":
-		return newGCSStorage(cfg, logger)
+		return newGCSStorage(ctx, cfg, logger)
 	}
 
 	return nil, fmt.Errorf("invalid provider: %s", cfg.Provider)

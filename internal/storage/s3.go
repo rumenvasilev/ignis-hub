@@ -22,16 +22,16 @@ type S3Storage struct {
 	logger *slog.Logger
 }
 
-func newS3Storage(cfg *registryConfig.Config, logger *slog.Logger) (*S3Storage, error) {
+func newS3Storage(ctx context.Context, cfg *registryConfig.Config, logger *slog.Logger) (*S3Storage, error) {
 	// Configure AWS SDK with explicit credentials first
 	var awsConfig aws.Config
 	var err error
 
 	if cfg.AWS.Endpoint != "" {
 		// For local development with LocalStack
-		awsConfig, err = config.LoadDefaultConfig(context.TODO(),
+		awsConfig, err = config.LoadDefaultConfig(ctx,
 			config.WithRegion(cfg.AWS.Region),
-			config.WithCredentialsProvider(aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
+			config.WithCredentialsProvider(aws.CredentialsProviderFunc(func(credCtx context.Context) (aws.Credentials, error) {
 				logger.Debug("Using explicit credentials for LocalStack")
 				return aws.Credentials{
 					AccessKeyID:     cfg.AWS.AccessKeyID,
@@ -44,9 +44,9 @@ func newS3Storage(cfg *registryConfig.Config, logger *slog.Logger) (*S3Storage, 
 		)
 	} else {
 		// For AWS production
-		awsConfig, err = config.LoadDefaultConfig(context.TODO(),
+		awsConfig, err = config.LoadDefaultConfig(ctx,
 			config.WithRegion(cfg.AWS.Region),
-			config.WithCredentialsProvider(aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
+			config.WithCredentialsProvider(aws.CredentialsProviderFunc(func(credCtx context.Context) (aws.Credentials, error) {
 				logger.Debug("Using explicit credentials for AWS")
 				return aws.Credentials{
 					AccessKeyID:     cfg.AWS.AccessKeyID,

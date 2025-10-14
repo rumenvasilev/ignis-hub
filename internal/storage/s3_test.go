@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"testing"
@@ -63,8 +64,9 @@ func TestNewS3Storage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			is := is.New(t)
+			ctx := context.Background()
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			storage, err := newS3Storage(tt.config, logger)
+			storage, err := newS3Storage(ctx, tt.config, logger)
 
 			if tt.wantError {
 				is.True(err != nil) // newS3Storage should return error

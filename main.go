@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -41,20 +42,24 @@ func main() {
 
 	// Setup logger
 	logger := setupLogger(cfg)
-	logger.Info("Starting Terraform Registry Server", "provider", *provider)
+	logger.Info("Starting Terraform Registry Server", "provider", *provider, "version", Version)
+
+	// Create root context that will be cancelled on OS signals
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	// Initialize storage based on provider
-	storageProvider, err := storage.NewStorage(cfg, logger)
+	storageProvider, err := storage.NewStorage(ctx, cfg, logger)
 	if err != nil {
 		logger.Error("Failed to initialize storage", "error", err)
 		os.Exit(1)
 	}
 	logger.Info("Initialized storage", "provider", *provider)
 
-	// Test storage connection
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := storageProvider.HealthCheck(ctx); err != nil {
+	// Test storage connection with timeout
+	healthCtx, healthCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer healthCancel()
+	if err := storageProvider.HealthCheck(healthCtx); err != nil {
 		logger.Error("Storage health check failed", "error", err, "provider", *provider)
 		os.Exit(1)
 	}
@@ -84,35 +89,42 @@ func main() {
 		WriteTimeout:   30 * time.Second,
 		IdleTimeout:    120 * time.Second,
 		MaxHeaderBytes: 1 << 20, // 1 MB
+		BaseContext:    func(_ net.Listener) context.Context { return ctx },
 	}
 
 	// Start server in a goroutine
+	serverErrors := make(chan error, 1)
 	go func() {
 		logger.Info("Starting HTTP server",
 			"host", cfg.Server.Host,
 			"port", cfg.Server.Port)
 
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("Failed to start server", "error", err)
-			os.Exit(1)
-		}
+		serverErrors <- srv.ListenAndServe()
 	}()
 
-	// Wait for interrupt signal to gracefully shutdown the server
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	logger.Info("Shutting down server...")
+	// Wait for either server error or interrupt signal
+	select {
+	case err := <-serverErrors:
+		if err != nil && err != http.ErrServerClosed {
+			logger.Error("Server error", "error", err)
+			os.Exit(1)
+		}
+	case <-ctx.Done():
+		// Signal received (SIGINT or SIGTERM)
+		logger.Info("Shutdown signal received", "signal", ctx.Err())
+	}
 
 	// Graceful shutdown with timeout
-	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
+	logger.Info("Initiating graceful shutdown...")
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Server forced to shutdown", "error", err)
-	} else {
-		logger.Info("Server shutdown completed")
+		os.Exit(1)
 	}
+
+	logger.Info("Server shutdown completed gracefully")
 }
 
 func setupLogger(cfg *config.Config) *slog.Logger {

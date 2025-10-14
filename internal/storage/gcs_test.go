@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -72,8 +73,9 @@ func TestNewGCSStorage(t *testing.T) {
 				}
 			}
 
+			ctx := context.Background()
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			storage, err := newGCSStorage(tt.config, logger)
+			storage, err := newGCSStorage(ctx, tt.config, logger)
 
 			// GCS client creation might fail without valid credentials
 			// This is expected in unit tests without GCP access
