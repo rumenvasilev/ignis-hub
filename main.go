@@ -44,7 +44,7 @@ func main() {
 	logger := setupLogger(cfg)
 	logger.Info("Starting Terraform Registry Server", "provider", *provider, "version", Version)
 
-	// Create root context that will be cancelled on OS signals
+	// Create root context that will be canceled on OS signals
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
