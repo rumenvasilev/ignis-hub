@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 
 	"github.com/rumenvasilev/ignis-hub/internal/config"
 	"github.com/rumenvasilev/ignis-hub/internal/handlers"
@@ -18,30 +20,50 @@ import (
 	"github.com/rumenvasilev/ignis-hub/internal/storage"
 )
 
+var Version = "dev"
+
 func main() {
+	// Parse command-line flags
+	provider := flag.String("provider", "aws", "Cloud provider to use (aws or gcp)")
+	flag.Parse()
+
+	// Validate provider flag
+	if *provider != "aws" && *provider != "gcp" {
+		slog.Error("Invalid provider specified", "provider", *provider, "valid_options", "aws, gcp")
+		os.Exit(1)
+	}
+
 	// Load configuration
-	cfg, err := config.Load()
+	cfg, err := config.Load(*provider)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to load configuration")
+		slog.Error("Failed to load configuration", "error", err)
+		os.Exit(1)
 	}
 
 	// Setup logger
 	logger := setupLogger(cfg)
-	logger.Info("Starting Terraform Registry Server")
+	logger.Info("Starting Terraform Registry Server", "provider", *provider, "version", Version)
 
-	// Initialize S3 storage
-	s3Storage, err := storage.NewS3Storage(cfg, logger)
+	// Create root context that will be canceled on OS signals
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Initialize storage based on provider
+	storageProvider, err := storage.NewStorage(ctx, cfg, logger)
 	if err != nil {
-		logger.WithError(err).Fatal("Failed to initialize S3 storage")
+		logger.Error("Failed to initialize storage", "error", err)
+		os.Exit(1)
 	}
+	logger.Info("Initialized storage", "provider", *provider)
 
-	// Test storage connection
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := s3Storage.HealthCheck(ctx); err != nil {
-		logger.WithError(err).Fatal("S3 storage health check failed")
+	// Test storage connection with timeout
+	healthCtx, healthCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer healthCancel()
+	if err := storageProvider.HealthCheck(healthCtx); err != nil {
+		logger.Error("Storage health check failed", "error", err, "provider", *provider)
+		os.Exit(1)
 	}
-	logger.Info("S3 storage connection verified")
+	logger.Info("Storage connection verified", "provider", *provider)
 
 	// Setup Gin
 	if cfg.Log.Level == "debug" {
@@ -57,7 +79,7 @@ func main() {
 	setupMiddleware(router, cfg, logger)
 
 	// Setup routes
-	setupRoutes(router, s3Storage, cfg, logger)
+	setupRoutes(router, storageProvider, cfg, logger)
 
 	// Create HTTP server
 	srv := &http.Server{
@@ -67,63 +89,76 @@ func main() {
 		WriteTimeout:   30 * time.Second,
 		IdleTimeout:    120 * time.Second,
 		MaxHeaderBytes: 1 << 20, // 1 MB
+		BaseContext:    func(_ net.Listener) context.Context { return ctx },
 	}
 
 	// Start server in a goroutine
+	serverErrors := make(chan error, 1)
 	go func() {
-		logger.WithFields(logrus.Fields{
-			"host": cfg.Server.Host,
-			"port": cfg.Server.Port,
-		}).Info("Starting HTTP server")
+		logger.Info("Starting HTTP server",
+			"host", cfg.Server.Host,
+			"port", cfg.Server.Port)
 
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.WithError(err).Fatal("Failed to start server")
-		}
+		serverErrors <- srv.ListenAndServe()
 	}()
 
-	// Wait for interrupt signal to gracefully shutdown the server
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	logger.Info("Shutting down server...")
+	// Wait for either server error or interrupt signal
+	select {
+	case err := <-serverErrors:
+		if err != nil && err != http.ErrServerClosed {
+			logger.Error("Server error", "error", err)
+			os.Exit(1)
+		}
+	case <-ctx.Done():
+		// Signal received (SIGINT or SIGTERM)
+		logger.Info("Shutdown signal received", "signal", ctx.Err())
+	}
 
 	// Graceful shutdown with timeout
-	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
-		logger.WithError(err).Error("Server forced to shutdown")
-	} else {
-		logger.Info("Server shutdown completed")
+	logger.Info("Initiating graceful shutdown...")
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Error("Server forced to shutdown", "error", err)
+		os.Exit(1)
 	}
+
+	logger.Info("Server shutdown completed gracefully")
 }
 
-func setupLogger(cfg *config.Config) *logrus.Logger {
-	logger := logrus.New()
-
-	// Set log level
-	level, err := logrus.ParseLevel(cfg.Log.Level)
-	if err != nil {
-		level = logrus.InfoLevel
+func setupLogger(cfg *config.Config) *slog.Logger {
+	// Parse log level
+	var level slog.Level
+	switch cfg.Log.Level {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn", "warning":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
 	}
-	logger.SetLevel(level)
 
-	// Set log format
+	// Create handler based on format
+	var handler slog.Handler
+	opts := &slog.HandlerOptions{
+		Level: level,
+	}
+
 	if cfg.Log.Format == "json" {
-		logger.SetFormatter(&logrus.JSONFormatter{
-			TimestampFormat: time.RFC3339,
-		})
+		handler = slog.NewJSONHandler(os.Stdout, opts)
 	} else {
-		logger.SetFormatter(&logrus.TextFormatter{
-			TimestampFormat: time.RFC3339,
-			FullTimestamp:   true,
-		})
+		handler = slog.NewTextHandler(os.Stdout, opts)
 	}
 
-	return logger
+	return slog.New(handler)
 }
 
-func setupMiddleware(router *gin.Engine, cfg *config.Config, logger *logrus.Logger) {
+func setupMiddleware(router *gin.Engine, cfg *config.Config, logger *slog.Logger) {
 	// Recovery middleware
 	router.Use(gin.Recovery())
 
@@ -141,7 +176,7 @@ func setupMiddleware(router *gin.Engine, cfg *config.Config, logger *logrus.Logg
 	router.Use(authMiddleware.Auth())
 }
 
-func setupRoutes(router *gin.Engine, storage *storage.S3Storage, cfg *config.Config, logger *logrus.Logger) {
+func setupRoutes(router *gin.Engine, storage storage.Storage, cfg *config.Config, logger *slog.Logger) {
 	// Initialize handlers
 	registryHandlers := handlers.NewRegistryHandlers(storage, cfg, logger)
 
@@ -153,7 +188,7 @@ func setupRoutes(router *gin.Engine, storage *storage.S3Storage, cfg *config.Con
 	router.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"name":    "Terraform Registry API",
-			"version": "1.0.0",
+			"version": Version,
 			"status":  "running",
 			"endpoints": gin.H{
 				"well_known": "/.well-known/terraform.json",

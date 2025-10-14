@@ -1,40 +1,40 @@
 package middleware
 
 import (
+	"log/slog"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 )
 
 // LoggingMiddleware creates a gin middleware for structured logging
-func LoggingMiddleware(logger *logrus.Logger) gin.HandlerFunc {
+func LoggingMiddleware(logger *slog.Logger) gin.HandlerFunc {
 	return gin.LoggerWithConfig(gin.LoggerConfig{
 		Formatter: func(param gin.LogFormatterParams) string {
-			// Create structured log entry
-			entry := logger.WithFields(logrus.Fields{
-				"timestamp":  param.TimeStamp.Format(time.RFC3339),
-				"status":     param.StatusCode,
-				"latency":    param.Latency,
-				"client_ip":  param.ClientIP,
-				"method":     param.Method,
-				"path":       param.Path,
-				"user_agent": param.Request.UserAgent(),
-				"body_size":  param.BodySize,
-			})
+			// Prepare log attributes
+			attrs := []any{
+				"timestamp", param.TimeStamp.Format(time.RFC3339),
+				"status", param.StatusCode,
+				"latency", param.Latency,
+				"client_ip", param.ClientIP,
+				"method", param.Method,
+				"path", param.Path,
+				"user_agent", param.Request.UserAgent(),
+				"body_size", param.BodySize,
+			}
 
 			// Add error if present
 			if param.ErrorMessage != "" {
-				entry = entry.WithField("error", param.ErrorMessage)
+				attrs = append(attrs, "error", param.ErrorMessage)
 			}
 
 			// Log based on status code
 			if param.StatusCode >= 500 {
-				entry.Error("HTTP request")
+				logger.Error("HTTP request", attrs...)
 			} else if param.StatusCode >= 400 {
-				entry.Warn("HTTP request")
+				logger.Warn("HTTP request", attrs...)
 			} else {
-				entry.Info("HTTP request")
+				logger.Info("HTTP request", attrs...)
 			}
 
 			// Return empty string as we've already logged

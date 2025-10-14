@@ -8,10 +8,12 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig `mapstructure:"server"`
-	AWS    AWSConfig    `mapstructure:"aws"`
-	Auth   AuthConfig   `mapstructure:"auth"`
-	Log    LogConfig    `mapstructure:"log"`
+	Server   ServerConfig `mapstructure:"server"`
+	AWS      AWSConfig    `mapstructure:"aws"`
+	GCP      GCPConfig    `mapstructure:"gcp"`
+	Auth     AuthConfig   `mapstructure:"auth"`
+	Log      LogConfig    `mapstructure:"log"`
+	Provider string       // Active provider (aws or gcp)
 }
 
 type ServerConfig struct {
@@ -30,6 +32,13 @@ type AWSConfig struct {
 	Endpoint        string `mapstructure:"endpoint"` // For local development with LocalStack
 }
 
+type GCPConfig struct {
+	GCSBucket       string `mapstructure:"gcs_bucket"`
+	GCSPrefix       string `mapstructure:"gcs_prefix"`
+	Endpoint        string `mapstructure:"endpoint"`         // For local development
+	CredentialsFile string `mapstructure:"credentials_file"` // For local development
+}
+
 type AuthConfig struct {
 	Enabled    bool     `mapstructure:"enabled"`
 	Method     string   `mapstructure:"method"`      // "basic", "token", "iam"
@@ -44,7 +53,7 @@ type LogConfig struct {
 	Format string `mapstructure:"format"` // "json" or "text"
 }
 
-func Load() (*Config, error) {
+func Load(provider string) (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
@@ -60,13 +69,19 @@ func Load() (*Config, error) {
 	viper.SetEnvPrefix("REGISTRY")
 
 	// Explicitly bind nested AWS environment variables that Viper doesn't auto-map
-	viper.BindEnv("aws.endpoint", "REGISTRY_AWS_ENDPOINT")                   //nolint:errcheck
-	viper.BindEnv("aws.access_key_id", "REGISTRY_AWS_ACCESS_KEY_ID")         //nolint:errcheck
-	viper.BindEnv("aws.secret_access_key", "REGISTRY_AWS_SECRET_ACCESS_KEY") //nolint:errcheck
-	viper.BindEnv("aws.session_token", "REGISTRY_AWS_SESSION_TOKEN")         //nolint:errcheck
-	viper.BindEnv("aws.s3_bucket", "REGISTRY_AWS_S3_BUCKET")                 //nolint:errcheck
-	viper.BindEnv("aws.s3_prefix", "REGISTRY_AWS_S3_PREFIX")                 //nolint:errcheck
-	viper.BindEnv("aws.region", "REGISTRY_AWS_REGION")                       //nolint:errcheck
+	_ = viper.BindEnv("aws.endpoint", "REGISTRY_AWS_ENDPOINT")
+	_ = viper.BindEnv("aws.access_key_id", "REGISTRY_AWS_ACCESS_KEY_ID")
+	_ = viper.BindEnv("aws.secret_access_key", "REGISTRY_AWS_SECRET_ACCESS_KEY")
+	_ = viper.BindEnv("aws.session_token", "REGISTRY_AWS_SESSION_TOKEN")
+	_ = viper.BindEnv("aws.s3_bucket", "REGISTRY_AWS_S3_BUCKET")
+	_ = viper.BindEnv("aws.s3_prefix", "REGISTRY_AWS_S3_PREFIX")
+	_ = viper.BindEnv("aws.region", "REGISTRY_AWS_REGION")
+
+	// Explicitly bind nested GCP environment variables that Viper doesn't auto-map
+	_ = viper.BindEnv("gcp.gcs_bucket", "REGISTRY_GCS_BUCKET")
+	_ = viper.BindEnv("gcp.gcs_prefix", "REGISTRY_GCS_PREFIX")
+	_ = viper.BindEnv("gcp.endpoint", "REGISTRY_GCP_ENDPOINT")
+	_ = viper.BindEnv("gcp.credentials_file", "REGISTRY_GCP_CREDENTIALS_FILE")
 
 	// Try to read config file
 	if err := viper.ReadInConfig(); err != nil {
@@ -81,7 +96,10 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 
-	// Validate required fields
+	// Set the active provider
+	config.Provider = provider
+
+	// Validate required fields for the active provider
 	if err := validateConfig(&config); err != nil {
 		return nil, fmt.Errorf("config validation failed: %w", err)
 	}
@@ -99,6 +117,9 @@ func setDefaults() {
 	viper.SetDefault("aws.region", "us-east-1")
 	viper.SetDefault("aws.s3_prefix", "registry")
 
+	// GCP defaults
+	viper.SetDefault("gcp.gcs_prefix", "registry")
+
 	// Auth defaults
 	viper.SetDefault("auth.enabled", true)
 	viper.SetDefault("auth.method", "token")
@@ -109,10 +130,24 @@ func setDefaults() {
 }
 
 func validateConfig(config *Config) error {
-	if config.AWS.S3Bucket == "" {
-		return fmt.Errorf("aws.s3_bucket is required")
+	// Validate provider-specific configuration
+	switch config.Provider {
+	case "aws":
+		if config.AWS.S3Bucket == "" {
+			return fmt.Errorf("aws.s3_bucket is required when using AWS provider")
+		}
+		if config.AWS.Region == "" {
+			return fmt.Errorf("aws.region is required when using AWS provider")
+		}
+	case "gcp":
+		if config.GCP.GCSBucket == "" {
+			return fmt.Errorf("gcp.gcs_bucket is required when using GCP provider")
+		}
+	default:
+		return fmt.Errorf("unsupported provider: %s", config.Provider)
 	}
 
+	// Validate auth configuration (common to all providers)
 	if config.Auth.Enabled {
 		switch config.Auth.Method {
 		case "basic":

@@ -12,6 +12,12 @@ aws:
   # access_key_id: "test"
   # secret_access_key: "test"
 
+# gcp:
+#   gcs_bucket: "my-terraform-registry"
+#   gcs_prefix: "registry"
+#   endpoint: "http://localhost:4566"
+#   credentials_file: "path/to/your/credentials.json"
+
 auth:
   enabled: true
   method: "token"  # Options: "basic", "token", "iam"

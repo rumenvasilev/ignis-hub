@@ -1,28 +1,74 @@
 version: "2"
-linters:
-  exclusions:
-    generated: lax
-    presets:
-      - comments
-      - common-false-positives
-      - legacy
-      - std-error-handling
-    rules:
-      - linters:
-          - funlen
-        path: _test.go
-    paths:
-      - vendor$
-      - fixtures$
-      - output$
-formatters:
-  exclusions:
-    generated: lax
-    paths:
-      - vendor$
-      - fixtures$
-      - output$
+run:
+  modules-download-mode: readonly
+  tests: true
 output:
   formats:
-    code-climate:
-      path: ./gl-code-quality-report.json
+    text:
+      path: stdout
+  sort-order:
+    - linter
+    - file
+linters:
+  enable:
+    - copyloopvar
+    - dupl
+    - goconst
+    - gocyclo
+    - gosec
+    - misspell
+    - prealloc
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gocyclo:
+      min-complexity: 15
+    gosec:
+      excludes:
+        - G204
+        - G304
+    misspell:
+      locale: US
+    revive:
+      confidence: 0.8
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - dupl
+          - errcheck
+          - gocyclo
+          - gosec
+        path: _test\.go
+      - linters:
+          - gosec
+        text: weak cryptographic primitive
+      - path: _test\.go
+        text: should not use dot imports
+      - linters:
+          - errcheck
+        source: defer.*\.Close\(\)
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
