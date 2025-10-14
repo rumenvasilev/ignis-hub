@@ -1,80 +1,7 @@
+version: "2"
 run:
-  timeout: 5m
-  tests: true
   modules-download-mode: readonly
-
-linters:
-  enable:
-    - gofmt
-    - govet
-    - errcheck
-    - staticcheck
-    - unused
-    - gosimple
-    - ineffassign
-    - typecheck
-    - gosec
-    - gocyclo
-    - goconst
-    - misspell
-    - revive
-    - goimports
-    - unparam
-    - unconvert
-    - dupl
-    - prealloc
-    - copyloopvar
-
-linters-settings:
-  gocyclo:
-    min-complexity: 15
-
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-
-  misspell:
-    locale: US
-
-  revive:
-    confidence: 0.8
-    rules:
-      - name: exported
-        disabled: true
-
-  gosec:
-    excludes:
-      - G204  # Subprocess launched with variable
-      - G304  # File path provided as taint input
-
-issues:
-  exclude-use-default: false
-  max-issues-per-linter: 0
-  max-same-issues: 0
-  
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - gocyclo
-        - errcheck
-        - dupl
-        - gosec
-
-    # Exclude known issues
-    - text: "weak cryptographic primitive"
-      linters:
-        - gosec
-
-    # Allow embedding in tests
-    - path: _test\.go
-      text: "should not use dot imports"
-
-    # Ignore error checks in deferred Close() calls
-    - source: "defer.*\\.Close\\(\\)"
-      linters:
-        - errcheck
-
+  tests: true
 output:
   formats:
     text:
@@ -82,3 +9,66 @@ output:
   sort-order:
     - linter
     - file
+linters:
+  enable:
+    - copyloopvar
+    - dupl
+    - goconst
+    - gocyclo
+    - gosec
+    - misspell
+    - prealloc
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gocyclo:
+      min-complexity: 15
+    gosec:
+      excludes:
+        - G204
+        - G304
+    misspell:
+      locale: US
+    revive:
+      confidence: 0.8
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - dupl
+          - errcheck
+          - gocyclo
+          - gosec
+        path: _test\.go
+      - linters:
+          - gosec
+        text: weak cryptographic primitive
+      - path: _test\.go
+        text: should not use dot imports
+      - linters:
+          - errcheck
+        source: defer.*\.Close\(\)
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
