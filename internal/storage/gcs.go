@@ -58,7 +58,7 @@ func (g *GCSStorage) GetModuleVersions(ctx context.Context, namespace, name, sys
 	reader, err := obj.NewReader(ctx)
 	if err != nil {
 		g.logger.Error("Failed to get module metadata", "error", err, "key", key)
-		return nil, fmt.Errorf("module not found: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrModuleNotFound, err)
 	}
 	defer reader.Close()
 
@@ -87,7 +87,7 @@ func (g *GCSStorage) GetModuleDownloadURL(ctx context.Context, namespace, name, 
 			"name", name,
 			"system", system,
 			"version", version)
-		return "", fmt.Errorf("module version not found: %w", err)
+		return "", fmt.Errorf("%w: %w", ErrModuleVersionNotFound, err)
 	}
 
 	// Generate a signed URL for download (valid for 1 hour)
@@ -110,7 +110,7 @@ func (g *GCSStorage) GetProviderVersions(ctx context.Context, namespace, typeNam
 	reader, err := obj.NewReader(ctx)
 	if err != nil {
 		g.logger.Error("Failed to get provider metadata", "error", err, "key", key)
-		return nil, fmt.Errorf("provider not found: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrProviderNotFound, err)
 	}
 	defer reader.Close()
 
@@ -134,7 +134,7 @@ func (g *GCSStorage) GetProviderBinary(ctx context.Context, namespace, typeName,
 	reader, err := obj.NewReader(ctx)
 	if err != nil {
 		g.logger.Error("Failed to get provider binary metadata", "error", err, "key", key)
-		return nil, fmt.Errorf("provider binary not found: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrProviderBinaryNotFound, err)
 	}
 	defer reader.Close()
 

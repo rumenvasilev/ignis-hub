@@ -92,7 +92,7 @@ func (s *S3Storage) GetModuleVersions(ctx context.Context, namespace, name, syst
 	})
 	if err != nil {
 		s.logger.Error("Failed to get module metadata", "error", err, "key", key)
-		return nil, fmt.Errorf("module not found: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrModuleNotFound, err)
 	}
 	defer result.Body.Close() //nolint:errcheck
 
@@ -128,7 +128,7 @@ func (s *S3Storage) GetModuleDownloadURL(ctx context.Context, namespace, name, s
 			"name", name,
 			"system", system,
 			"version", version)
-		return "", fmt.Errorf("module version not found: %w", err)
+		return "", fmt.Errorf("%w: %w", ErrModuleVersionNotFound, err)
 	}
 
 	// Generate a presigned URL for download
@@ -154,7 +154,7 @@ func (s *S3Storage) GetProviderVersions(ctx context.Context, namespace, typeName
 	})
 	if err != nil {
 		s.logger.Error("Failed to get provider metadata", "error", err, "key", key)
-		return nil, fmt.Errorf("provider not found: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrProviderNotFound, err)
 	}
 	defer result.Body.Close() //nolint:errcheck
 
@@ -180,7 +180,7 @@ func (s *S3Storage) GetProviderBinary(ctx context.Context, namespace, typeName, 
 	})
 	if err != nil {
 		s.logger.Error("Failed to get provider binary metadata", "error", err, "key", key)
-		return nil, fmt.Errorf("provider binary not found: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrProviderBinaryNotFound, err)
 	}
 	defer result.Body.Close() //nolint:errcheck
 

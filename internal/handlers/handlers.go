@@ -63,7 +63,7 @@ func (h *RegistryHandlers) ListModuleVersions(c *gin.Context) {
 	if err != nil {
 		h.logger.Error("Failed to get module versions", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
-			Errors: []string{"Module not found"},
+			Errors: []string{storage.ErrModuleNotFound.Error()},
 		})
 		return
 	}
@@ -100,7 +100,7 @@ func (h *RegistryHandlers) GetModuleVersion(c *gin.Context) {
 	if err != nil {
 		h.logger.Error("Failed to get module download URL", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
-			Errors: []string{"Module version not found"},
+			Errors: []string{storage.ErrModuleVersionNotFound.Error()},
 		})
 		return
 	}
@@ -129,7 +129,7 @@ func (h *RegistryHandlers) ListProviderVersions(c *gin.Context) {
 	if err != nil {
 		h.logger.Error("Failed to get provider versions", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
-			Errors: []string{"Provider not found"},
+			Errors: []string{storage.ErrProviderNotFound.Error()},
 		})
 		return
 	}
@@ -163,7 +163,7 @@ func (h *RegistryHandlers) GetProviderVersion(c *gin.Context) {
 	if err != nil {
 		h.logger.Error("Failed to get provider binary", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
-			Errors: []string{"Provider binary not found"},
+			Errors: []string{storage.ErrProviderBinaryNotFound.Error()},
 		})
 		return
 	}
