@@ -106,6 +106,7 @@ jobs:
       run: |
         ./scripts/e2e-terraform-integration.sh
       env:
+        TF_LOG: DEBUG
         CHECKPOINT_DISABLE: 1
 
     - name: Cleanup
