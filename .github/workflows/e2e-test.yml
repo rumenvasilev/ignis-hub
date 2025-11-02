@@ -22,6 +22,12 @@ jobs:
       with:
         go-version: '1.25.3'
 
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+      with:
+        terraform_version: '1.12.0'
+        terraform_wrapper: false
+    
     - name: Start LocalStack
       uses: LocalStack/setup-localstack@v0.2.3
       with:
@@ -81,11 +87,6 @@ jobs:
         echo "📝 Registry logs:"
         cat registry.log || echo "No logs available"
 
-    - name: Run E2E tests
-      run: |
-        echo "🧪 Running E2E tests..."
-        ./scripts/e2e-test.sh
-
     - name: Upload provider binary (E2E test)
       run: |
         echo "📤 Testing provider upload..."
@@ -96,9 +97,16 @@ jobs:
       run: |
         ./scripts/e2e-verify-provider.sh
 
+    - name: Run E2E tests
+      run: |
+        echo "🧪 Running E2E tests..."
+        ./scripts/e2e-test.sh
+
     - name: Test Terraform integration
       run: |
         ./scripts/e2e-terraform-integration.sh
+      env:
+        CHECKPOINT_DISABLE: 1
 
     - name: Cleanup
       if: always()

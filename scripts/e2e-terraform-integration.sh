@@ -40,15 +40,15 @@ log_info "Creating Terraform configuration..."
 cat > main.tf << 'EOF'
 terraform {
   required_providers {
-    aws = {
-      source  = "localhost:8080/hashicorp/aws"
-      version = "~> 5.20.0"
+    provider = {
+      source  = "localhost:8080/demo/provider"
+      version = "0.1.0"
     }
   }
 }
 
-# This is just to test provider resolution, not actual AWS resources
-provider "aws" {
+# This is just to test provider resolution, not actual resources
+provider "provider" {
   skip_credentials_validation = true
   skip_metadata_api_check     = true
   skip_requesting_account_id  = true
@@ -63,14 +63,22 @@ echo ""
 # Configure Terraform CLI to use our registry
 log_info "Configuring Terraform CLI..."
 cat > ~/.terraformrc << 'EOF'
-provider_installation {
-  direct {
-    exclude = ["*/*"]
-  }
+# provider_installation {
+#   direct {
+#     exclude = ["*/*"]
+#   }
   
-  network_mirror {
-    url = "http://localhost:8080/v1/providers/"
+#   network_mirror {
+#     url = "http://localhost:8080/v1/providers/"
+#   }
+# }
+
+host "localhost:8080" {
+  services = {
+    "providers.v1" = "http://localhost:8080/v1/providers/",
+    "modules.v1" = "http://localhost:8080/v1/modules/",
   }
+  insecure = true  # Allow HTTP instead of HTTPS
 }
 EOF
 
