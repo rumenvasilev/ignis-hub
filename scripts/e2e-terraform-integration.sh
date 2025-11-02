@@ -5,7 +5,6 @@
 set -e
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
-TEST_DIR="${TEST_DIR:-/tmp/terraform-test}"
 
 # Colors
 GREEN='\033[0;32m'
@@ -32,7 +31,7 @@ log_warning() {
 log_info "Testing Terraform integration with registry at ${BASE_URL}"
 
 # Create test directory
-mkdir -p "$TEST_DIR"
+TEST_DIR=$(mktemp -d)
 cd "$TEST_DIR"
 
 # Create Terraform configuration
@@ -49,9 +48,7 @@ terraform {
 
 # This is just to test provider resolution, not actual resources
 provider "provider" {
-  skip_credentials_validation = true
-  skip_metadata_api_check     = true
-  skip_requesting_account_id  = true
+
 }
 EOF
 
@@ -63,16 +60,6 @@ echo ""
 # Configure Terraform CLI to use our registry
 log_info "Configuring Terraform CLI..."
 cat > ~/.terraformrc << 'EOF'
-# provider_installation {
-#   direct {
-#     exclude = ["*/*"]
-#   }
-  
-#   network_mirror {
-#     url = "http://localhost:8080/v1/providers/"
-#   }
-# }
-
 host "localhost:8080" {
   services = {
     "providers.v1" = "http://localhost:8080/v1/providers/",

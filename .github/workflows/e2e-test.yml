@@ -46,7 +46,7 @@ jobs:
         
         echo "📤 Uploading sample data..."
         if [ -d examples ]; then
-          awslocal s3 sync examples s3://terraform-registry/registry --delete
+          awslocal s3 sync testfixtures s3://terraform-registry/registry --delete
         fi
         
         echo "📋 Listing bucket contents..."
@@ -86,16 +86,6 @@ jobs:
       run: |
         echo "📝 Registry logs:"
         cat registry.log || echo "No logs available"
-
-    - name: Upload provider binary (E2E test)
-      run: |
-        echo "📤 Testing provider upload..."
-        chmod +x ./scripts/e2e-upload-provider.sh
-        AWS_ENDPOINT=http://localhost:4566 ./scripts/e2e-upload-provider.sh
-
-    - name: Verify uploaded provider
-      run: |
-        ./scripts/e2e-verify-provider.sh
 
     - name: Run E2E tests
       run: |

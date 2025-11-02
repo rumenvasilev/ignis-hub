@@ -106,11 +106,13 @@ test_module_download() {
         return 0
     fi
     
-    # Check for X-Terraform-Get header or 404 (acceptable if module doesn't exist)
+    # Check for X-Terraform-Get header
+    if echo "$response" | grep -q "X-Terraform-Get"; then
+        test_passed "Module download endpoint working correctly"
+    fi
+    # Check for 404 (acceptable if module doesn't exist)
     if echo "$response" | grep -q "404"; then
         test_failed "Module download endpoint returned 404"
-    elif echo "$response" | grep -q "X-Terraform-Get"; then
-        test_passed "Module download endpoint working correctly"
     else
         test_failed "Module download endpoint returned unexpected response: $response"
     fi
@@ -119,7 +121,7 @@ test_module_download() {
 test_provider_versions() {
     log_info "Test 5: List Provider Versions"
     
-    # Try demo/provider provider (uploaded in examples/providers/demo/provider/0.1.0)
+    # Try demo/provider provider (uploaded in testfixtures/providers/demo/provider/0.1.0)
     response=$(curl -sf "$BASE_URL/v1/providers/demo/provider/versions" || echo "FAILED")
     
     if [[ "$response" == "FAILED" ]]; then
@@ -154,6 +156,16 @@ test_provider_binary() {
     else
         test_failed "Provider binary endpoint missing required fields"
         echo "Response: $response"
+    fi
+
+    # Download provider
+    url="$(echo "$response" | jq -r '.download_url')"
+    response=$(curl -s -L -o /dev/null -w "%{http_code}" "$url")
+    if [[ "$response" == "200" ]]; then
+        test_passed "Provider binary downloaded successfully from $url"
+    else
+        test_failed "Provider binary download failed from $url"
+        return 0
     fi
 }
 
