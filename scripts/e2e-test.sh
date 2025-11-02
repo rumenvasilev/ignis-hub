@@ -2,7 +2,7 @@
 
 # End-to-End Test Script for Terraform Registry
 # Tests the full workflow: API endpoints, provider/module listing, downloads
-set -e
+# set -e
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
 FAILED_TESTS=0
