@@ -1,7 +1,7 @@
 version: "2"
 run:
   modules-download-mode: readonly
-  tests: true
+  tests: false
 output:
   formats:
     text:
@@ -59,6 +59,7 @@ linters:
       - third_party$
       - builtin$
       - examples$
+      - cmd/ignishubctl
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0

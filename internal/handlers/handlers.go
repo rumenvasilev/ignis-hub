@@ -59,7 +59,12 @@ func (h *RegistryHandlers) ListModuleVersions(c *gin.Context) {
 		"name", params.Name,
 		"system", params.System)
 
-	metadata, err := h.storage.GetModuleVersions(c.Request.Context(), params.Namespace, params.Name, params.System)
+	metadata, err := h.storage.GetVersions(c.Request.Context(), storage.ResourceIdentifier{
+		Type:      storage.ResourceTypeModule,
+		Namespace: params.Namespace,
+		Name:      params.Name,
+		System:    params.System,
+	})
 	if err != nil {
 		h.logger.Error("Failed to get module versions", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
@@ -71,7 +76,7 @@ func (h *RegistryHandlers) ListModuleVersions(c *gin.Context) {
 	response := models.ListModuleVersionsResponse{
 		Modules: []models.VersionsModule{
 			{
-				Versions: metadata.Versions,
+				Versions: metadata.Module.Versions,
 			},
 		},
 	}
@@ -96,7 +101,13 @@ func (h *RegistryHandlers) GetModuleVersion(c *gin.Context) {
 		"system", params.System,
 		"version", params.Version)
 
-	downloadURL, err := h.storage.GetModuleDownloadURL(c.Request.Context(), params.Namespace, params.Name, params.System, params.Version)
+	downloadInfo, err := h.storage.GetDownloadInfo(c.Request.Context(), storage.ResourceIdentifier{
+		Type:      storage.ResourceTypeModule,
+		Namespace: params.Namespace,
+		Name:      params.Name,
+		System:    params.System,
+		Version:   params.Version,
+	})
 	if err != nil {
 		h.logger.Error("Failed to get module download URL", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
@@ -106,7 +117,7 @@ func (h *RegistryHandlers) GetModuleVersion(c *gin.Context) {
 	}
 
 	// Set the X-Terraform-Get header and return 204 No Content
-	c.Header("X-Terraform-Get", downloadURL)
+	c.Header("X-Terraform-Get", downloadInfo.URL)
 	c.Status(http.StatusNoContent)
 }
 
@@ -125,7 +136,11 @@ func (h *RegistryHandlers) ListProviderVersions(c *gin.Context) {
 		"namespace", params.Namespace,
 		"type", params.Type)
 
-	metadata, err := h.storage.GetProviderVersions(c.Request.Context(), params.Namespace, params.Type)
+	versionsResp, err := h.storage.GetVersions(c.Request.Context(), storage.ResourceIdentifier{
+		Type:      storage.ResourceTypeProvider,
+		Namespace: params.Namespace,
+		Name:      params.Type,
+	})
 	if err != nil {
 		h.logger.Error("Failed to get provider versions", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
@@ -135,7 +150,7 @@ func (h *RegistryHandlers) ListProviderVersions(c *gin.Context) {
 	}
 
 	response := models.ListProviderVersionsResponse{
-		Versions: metadata.Versions,
+		Versions: versionsResp.Provider.Versions,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -159,7 +174,14 @@ func (h *RegistryHandlers) GetProviderVersion(c *gin.Context) {
 		"os", params.OS,
 		"arch", params.Arch)
 
-	binaryMetadata, err := h.storage.GetProviderBinary(c.Request.Context(), params.Namespace, params.Type, params.Version, params.OS, params.Arch)
+	downloadInfo, err := h.storage.GetDownloadInfo(c.Request.Context(), storage.ResourceIdentifier{
+		Type:      storage.ResourceTypeProvider,
+		Namespace: params.Namespace,
+		Name:      params.Type,
+		Version:   params.Version,
+		OS:        params.OS,
+		Arch:      params.Arch,
+	})
 	if err != nil {
 		h.logger.Error("Failed to get provider binary", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
@@ -168,6 +190,7 @@ func (h *RegistryHandlers) GetProviderVersion(c *gin.Context) {
 		return
 	}
 
+	binaryMetadata := downloadInfo.ProviderBinary
 	response := models.GetProviderVersionResponse{
 		Arch:                binaryMetadata.Arch,
 		DownloadURL:         binaryMetadata.DownloadURL,
