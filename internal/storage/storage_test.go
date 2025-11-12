@@ -25,7 +25,7 @@ func TestNewStorage_AWS(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	storage, err := NewStorage(ctx, cfg, logger)
+	storage, err := New(ctx, cfg, logger)
 	is.NoErr(err) // NewStorage should succeed for AWS
 
 	is.True(storage != nil) // storage should not be nil
@@ -51,7 +51,7 @@ func TestNewStorage_GCP(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	storage, err := NewStorage(ctx, cfg, logger)
+	storage, err := New(ctx, cfg, logger)
 
 	// We expect this might fail without credentials, but we're testing the factory logic
 	if err != nil {
@@ -77,7 +77,7 @@ func TestNewStorage_InvalidProvider(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	storage, err := NewStorage(ctx, cfg, logger)
+	storage, err := New(ctx, cfg, logger)
 	is.True(err != nil)                              // NewStorage should fail for invalid provider
 	is.True(storage == nil)                          // storage should be nil for invalid provider
 	is.Equal(err.Error(), "invalid provider: azure") // error message should match
@@ -91,7 +91,7 @@ func TestNewStorage_EmptyProvider(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	storage, err := NewStorage(ctx, cfg, logger)
+	storage, err := New(ctx, cfg, logger)
 	is.True(err != nil)     // NewStorage should fail for empty provider
 	is.True(storage == nil) // storage should be nil for empty provider
 }

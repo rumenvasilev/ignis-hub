@@ -1,27 +1,31 @@
 # Build stage
 FROM golang:1.25.3-alpine AS builder
 
+ARG PREBUILT=false
+ARG VERSION=dev
+ARG TARGETARCH
+
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
 
 # Set working directory
 WORKDIR /app
 
-# Copy go mod and sum files
+# If using prebuilt binary, copy it; otherwise build from source
 COPY go.mod go.sum ./
+RUN if [ "$PREBUILT" = "false" ]; then go mod download; fi
 
-# Download dependencies
-RUN go mod download
-
-# Copy source code
 COPY . .
 
-# Build the application with version info
-ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -a \
-    -ldflags="-s -w -X main.Version=${VERSION}" \
-    -o ignis-hub .
+# Build or use pre-built binary
+RUN if [ "$PREBUILT" = "true" ]; then \
+      cp dist/ignis-hub-linux-${TARGETARCH} ignis-hub && chmod +x ignis-hub; \
+    else \
+      CGO_ENABLED=0 GOOS=linux go build \
+        -a \
+        -ldflags="-s -w -X main.Version=${VERSION}" \
+        -o ignis-hub .; \
+    fi
 
 # Final stage
 FROM alpine:latest

@@ -14,6 +14,7 @@ import (
 	"github.com/matryer/is"
 	"github.com/rumenvasilev/ignis-hub/internal/config"
 	"github.com/rumenvasilev/ignis-hub/internal/models"
+	"github.com/rumenvasilev/ignis-hub/internal/storage"
 )
 
 func init() {
@@ -22,41 +23,60 @@ func init() {
 
 // Mock storage implementation
 type mockStorage struct {
-	getModuleVersionsFunc    func(ctx context.Context, namespace, name, system string) (*models.ModuleMetadata, error)
-	getModuleDownloadURLFunc func(ctx context.Context, namespace, name, system, version string) (string, error)
-	getProviderVersionsFunc  func(ctx context.Context, namespace, typeName string) (*models.ProviderMetadata, error)
-	getProviderBinaryFunc    func(ctx context.Context, namespace, typeName, version, os, arch string) (*models.ProviderBinaryMetadata, error)
-	healthCheckFunc          func(ctx context.Context) error
+	getVersionsFunc     func(ctx context.Context, id storage.ResourceIdentifier) (*storage.VersionsResponse, error)
+	getDownloadInfoFunc func(ctx context.Context, id storage.ResourceIdentifier) (*storage.DownloadInfoResponse, error)
+	listFunc            func(ctx context.Context, resourceType storage.ResourceType) ([]storage.ResourceInfo, error)
+	uploadFunc          func(ctx context.Context, id storage.ResourceIdentifier, filepath string) error
+	updateMetadataFunc  func(ctx context.Context, id storage.ResourceIdentifier, metadata interface{}) error
+	deleteFunc          func(ctx context.Context, id storage.ResourceIdentifier) error
+	healthCheckFunc     func(ctx context.Context) error
 }
 
-func (m *mockStorage) GetModuleVersions(ctx context.Context, namespace, name, system string) (*models.ModuleMetadata, error) {
-	if m.getModuleVersionsFunc != nil {
-		return m.getModuleVersionsFunc(ctx, namespace, name, system)
+// Reader interface methods
+func (m *mockStorage) GetVersions(ctx context.Context, id storage.ResourceIdentifier) (*storage.VersionsResponse, error) {
+	if m.getVersionsFunc != nil {
+		return m.getVersionsFunc(ctx, id)
 	}
 	return nil, errors.New("not implemented")
 }
 
-func (m *mockStorage) GetModuleDownloadURL(ctx context.Context, namespace, name, system, version string) (string, error) {
-	if m.getModuleDownloadURLFunc != nil {
-		return m.getModuleDownloadURLFunc(ctx, namespace, name, system, version)
-	}
-	return "", errors.New("not implemented")
-}
-
-func (m *mockStorage) GetProviderVersions(ctx context.Context, namespace, typeName string) (*models.ProviderMetadata, error) {
-	if m.getProviderVersionsFunc != nil {
-		return m.getProviderVersionsFunc(ctx, namespace, typeName)
+func (m *mockStorage) GetDownloadInfo(ctx context.Context, id storage.ResourceIdentifier) (*storage.DownloadInfoResponse, error) {
+	if m.getDownloadInfoFunc != nil {
+		return m.getDownloadInfoFunc(ctx, id)
 	}
 	return nil, errors.New("not implemented")
 }
 
-func (m *mockStorage) GetProviderBinary(ctx context.Context, namespace, typeName, version, os, arch string) (*models.ProviderBinaryMetadata, error) {
-	if m.getProviderBinaryFunc != nil {
-		return m.getProviderBinaryFunc(ctx, namespace, typeName, version, os, arch)
+func (m *mockStorage) List(ctx context.Context, resourceType storage.ResourceType) ([]storage.ResourceInfo, error) {
+	if m.listFunc != nil {
+		return m.listFunc(ctx, resourceType)
 	}
 	return nil, errors.New("not implemented")
 }
 
+// Writer interface methods
+func (m *mockStorage) Upload(ctx context.Context, id storage.ResourceIdentifier, filepath string) error {
+	if m.uploadFunc != nil {
+		return m.uploadFunc(ctx, id, filepath)
+	}
+	return errors.New("not implemented")
+}
+
+func (m *mockStorage) UpdateMetadata(ctx context.Context, id storage.ResourceIdentifier, metadata interface{}) error {
+	if m.updateMetadataFunc != nil {
+		return m.updateMetadataFunc(ctx, id, metadata)
+	}
+	return errors.New("not implemented")
+}
+
+func (m *mockStorage) Delete(ctx context.Context, id storage.ResourceIdentifier) error {
+	if m.deleteFunc != nil {
+		return m.deleteFunc(ctx, id)
+	}
+	return errors.New("not implemented")
+}
+
+// HealthChecker interface method
 func (m *mockStorage) HealthCheck(ctx context.Context) error {
 	if m.healthCheckFunc != nil {
 		return m.healthCheckFunc(ctx)
@@ -78,11 +98,11 @@ func setupTestHandler() (*RegistryHandlers, *mockStorage, *slog.Logger) {
 
 func TestNewRegistryHandlers(t *testing.T) {
 	is := is.New(t)
-	handler, storage, logger := setupTestHandler()
+	handler, _, logger := setupTestHandler()
 
-	is.True(handler != nil)             // handler should not be nil
-	is.True(handler.storage == storage) // storage should be set correctly
-	is.True(handler.logger == logger)   // logger should be set correctly
+	is.True(handler != nil)           // handler should not be nil
+	is.True(handler.storage != nil)   // storage should be set
+	is.True(handler.logger == logger) // logger should be set correctly
 }
 
 func TestGetWellKnown(t *testing.T) {
@@ -133,13 +153,15 @@ func TestGetWellKnown_BaseURLWithSlash(t *testing.T) {
 
 func TestListModuleVersions_Success(t *testing.T) {
 	is := is.New(t)
-	handler, storage, _ := setupTestHandler()
+	handler, stor, _ := setupTestHandler()
 
-	storage.getModuleVersionsFunc = func(ctx context.Context, namespace, name, system string) (*models.ModuleMetadata, error) {
-		return &models.ModuleMetadata{
-			Versions: []models.Version{
-				{Version: "1.0.0"},
-				{Version: "1.1.0"},
+	stor.getVersionsFunc = func(ctx context.Context, id storage.ResourceIdentifier) (*storage.VersionsResponse, error) {
+		return &storage.VersionsResponse{
+			Module: &models.ModuleMetadata{
+				Versions: []models.Version{
+					{Version: "1.0.0"},
+					{Version: "1.1.0"},
+				},
 			},
 		}, nil
 	}
@@ -163,9 +185,9 @@ func TestListModuleVersions_Success(t *testing.T) {
 
 func TestListModuleVersions_NotFound(t *testing.T) {
 	is := is.New(t)
-	handler, storage, _ := setupTestHandler()
+	handler, stor, _ := setupTestHandler()
 
-	storage.getModuleVersionsFunc = func(ctx context.Context, namespace, name, system string) (*models.ModuleMetadata, error) {
+	stor.getVersionsFunc = func(ctx context.Context, id storage.ResourceIdentifier) (*storage.VersionsResponse, error) {
 		return nil, errors.New("module not found")
 	}
 
@@ -187,10 +209,12 @@ func TestListModuleVersions_NotFound(t *testing.T) {
 
 func TestGetModuleVersion_Success(t *testing.T) {
 	is := is.New(t)
-	handler, storage, _ := setupTestHandler()
+	handler, stor, _ := setupTestHandler()
 
-	storage.getModuleDownloadURLFunc = func(ctx context.Context, namespace, name, system, version string) (string, error) {
-		return "https://example.com/module.tar.gz", nil
+	stor.getDownloadInfoFunc = func(ctx context.Context, id storage.ResourceIdentifier) (*storage.DownloadInfoResponse, error) {
+		return &storage.DownloadInfoResponse{
+			URL: "https://example.com/module.tar.gz",
+		}, nil
 	}
 
 	router := gin.New()
@@ -208,10 +232,10 @@ func TestGetModuleVersion_Success(t *testing.T) {
 
 func TestGetModuleVersion_NotFound(t *testing.T) {
 	is := is.New(t)
-	handler, storage, _ := setupTestHandler()
+	handler, stor, _ := setupTestHandler()
 
-	storage.getModuleDownloadURLFunc = func(ctx context.Context, namespace, name, system, version string) (string, error) {
-		return "", errors.New("version not found")
+	stor.getDownloadInfoFunc = func(ctx context.Context, id storage.ResourceIdentifier) (*storage.DownloadInfoResponse, error) {
+		return nil, errors.New("version not found")
 	}
 
 	router := gin.New()
@@ -226,13 +250,15 @@ func TestGetModuleVersion_NotFound(t *testing.T) {
 
 func TestListProviderVersions_Success(t *testing.T) {
 	is := is.New(t)
-	handler, storage, _ := setupTestHandler()
+	handler, stor, _ := setupTestHandler()
 
-	storage.getProviderVersionsFunc = func(ctx context.Context, namespace, typeName string) (*models.ProviderMetadata, error) {
-		return &models.ProviderMetadata{
-			Versions: []models.ProviderVersion{
-				{Version: "1.0.0"},
-				{Version: "2.0.0"},
+	stor.getVersionsFunc = func(ctx context.Context, id storage.ResourceIdentifier) (*storage.VersionsResponse, error) {
+		return &storage.VersionsResponse{
+			Provider: &models.ProviderMetadata{
+				Versions: []models.ProviderVersion{
+					{Version: "1.0.0"},
+					{Version: "2.0.0"},
+				},
 			},
 		}, nil
 	}
@@ -255,9 +281,9 @@ func TestListProviderVersions_Success(t *testing.T) {
 
 func TestListProviderVersions_NotFound(t *testing.T) {
 	is := is.New(t)
-	handler, storage, _ := setupTestHandler()
+	handler, stor, _ := setupTestHandler()
 
-	storage.getProviderVersionsFunc = func(ctx context.Context, namespace, typeName string) (*models.ProviderMetadata, error) {
+	stor.getVersionsFunc = func(ctx context.Context, id storage.ResourceIdentifier) (*storage.VersionsResponse, error) {
 		return nil, errors.New("provider not found")
 	}
 
@@ -273,17 +299,19 @@ func TestListProviderVersions_NotFound(t *testing.T) {
 
 func TestGetProviderVersion_Success(t *testing.T) {
 	is := is.New(t)
-	handler, storage, _ := setupTestHandler()
+	handler, stor, _ := setupTestHandler()
 
-	storage.getProviderBinaryFunc = func(ctx context.Context, namespace, typeName, version, os, arch string) (*models.ProviderBinaryMetadata, error) {
-		return &models.ProviderBinaryMetadata{
-			Arch:        "amd64",
-			OS:          "linux",
-			DownloadURL: "https://example.com/provider.zip",
-			Filename:    "terraform-provider-aws_1.0.0_linux_amd64.zip",
-			Protocols:   []string{"5.0"},
-			Shasum:      "abc123",
-			SigningKeys: models.SigningKeys{},
+	stor.getDownloadInfoFunc = func(ctx context.Context, id storage.ResourceIdentifier) (*storage.DownloadInfoResponse, error) {
+		return &storage.DownloadInfoResponse{
+			ProviderBinary: &models.ProviderBinaryMetadata{
+				Arch:        "amd64",
+				OS:          "linux",
+				DownloadURL: "https://example.com/provider.zip",
+				Filename:    "terraform-provider-aws_1.0.0_linux_amd64.zip",
+				Protocols:   []string{"5.0"},
+				Shasum:      "abc123",
+				SigningKeys: models.SigningKeys{},
+			},
 		}, nil
 	}
 
@@ -307,9 +335,9 @@ func TestGetProviderVersion_Success(t *testing.T) {
 
 func TestGetProviderVersion_NotFound(t *testing.T) {
 	is := is.New(t)
-	handler, storage, _ := setupTestHandler()
+	handler, stor, _ := setupTestHandler()
 
-	storage.getProviderBinaryFunc = func(ctx context.Context, namespace, typeName, version, os, arch string) (*models.ProviderBinaryMetadata, error) {
+	stor.getDownloadInfoFunc = func(ctx context.Context, id storage.ResourceIdentifier) (*storage.DownloadInfoResponse, error) {
 		return nil, errors.New("binary not found")
 	}
 
@@ -325,9 +353,9 @@ func TestGetProviderVersion_NotFound(t *testing.T) {
 
 func TestHealthCheck_Healthy(t *testing.T) {
 	is := is.New(t)
-	handler, storage, _ := setupTestHandler()
+	handler, stor, _ := setupTestHandler()
 
-	storage.healthCheckFunc = func(ctx context.Context) error {
+	stor.healthCheckFunc = func(ctx context.Context) error {
 		return nil
 	}
 
@@ -349,9 +377,9 @@ func TestHealthCheck_Healthy(t *testing.T) {
 
 func TestHealthCheck_Unhealthy(t *testing.T) {
 	is := is.New(t)
-	handler, storage, _ := setupTestHandler()
+	handler, stor, _ := setupTestHandler()
 
-	storage.healthCheckFunc = func(ctx context.Context) error {
+	stor.healthCheckFunc = func(ctx context.Context) error {
 		return errors.New("storage unavailable")
 	}
 

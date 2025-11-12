@@ -1,0 +1,121 @@
+name: E2E Tests
+
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  e2e-test:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.25.3'
+
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+      with:
+        terraform_version: '1.12.0'
+        terraform_wrapper: false
+    
+    - name: Start LocalStack
+      uses: LocalStack/setup-localstack@v0.2.3
+      with:
+        image-tag: 'latest'
+        install-awslocal: 'true'
+        configuration: SERVICES=ssm,sts DEBUG=1
+      env:
+        AWS_DEFAULT_REGION: us-east-1
+        AWS_ACCESS_KEY_ID: test
+        AWS_SECRET_ACCESS_KEY: test
+
+    - name: Initialize S3 bucket and upload test data
+      run: |
+        echo "📦 Creating S3 bucket..."
+        awslocal s3 mb s3://terraform-registry
+        
+        echo "📤 Uploading sample data..."
+        if [ -d examples ]; then
+          awslocal s3 sync testfixtures s3://terraform-registry/registry --delete
+        fi
+        
+        echo "📋 Listing bucket contents..."
+        awslocal s3 ls s3://terraform-registry/registry --recursive
+        
+        echo "✅ S3 bucket initialized"
+
+    - name: Build and start registry
+      run: |
+        echo "🔨 Building ignis-hub registry..."
+        go build -v -o ignis-hub .
+        chmod +x ignis-hub
+        
+        echo "🚀 Starting Terraform Registry in background..."
+        REGISTRY_AWS_REGION=us-east-1 \
+        REGISTRY_AWS_S3_BUCKET=terraform-registry \
+        REGISTRY_AWS_S3_PREFIX=registry \
+        REGISTRY_AWS_ENDPOINT=http://localhost:4566 \
+        REGISTRY_AWS_ACCESS_KEY_ID=test \
+        REGISTRY_AWS_SECRET_ACCESS_KEY=test \
+        REGISTRY_AUTH_ENABLED=false \
+        REGISTRY_LOG_LEVEL=debug \
+        REGISTRY_LOG_FORMAT=text \
+        REGISTRY_SERVER_BASE_URL=http://localhost:8080 \
+        ./ignis-hub > registry.log 2>&1 &
+        
+        REGISTRY_PID=$!
+        echo "Registry started with PID: $REGISTRY_PID"
+        echo "REGISTRY_PID=$REGISTRY_PID" >> $GITHUB_ENV
+        
+        echo "⏳ Waiting for registry to be ready..."
+        timeout 60 bash -c 'until curl -sf http://localhost:8080/health > /dev/null 2>&1; do sleep 2; done'
+        echo "✅ Registry is ready"
+
+    - name: Show registry logs
+      if: always()
+      run: |
+        echo "📝 Registry logs:"
+        cat registry.log || echo "No logs available"
+
+    - name: Run E2E tests
+      run: |
+        echo "🧪 Running E2E tests..."
+        ./scripts/e2e-test.sh
+
+    - name: Test Terraform integration
+      run: |
+        ./scripts/e2e-terraform-integration.sh
+      env:
+        TF_LOG: DEBUG
+        CHECKPOINT_DISABLE: 1
+
+    - name: Cleanup
+      if: always()
+      run: |
+        echo "🧹 Cleaning up..."
+        if [ -n "$REGISTRY_PID" ]; then
+          echo "Stopping registry (PID: $REGISTRY_PID)..."
+          kill $REGISTRY_PID || true
+        fi
+        echo "✅ Cleanup complete"
+
+    - name: Upload test artifacts
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-test-logs
+        path: |
+          registry.log
+          /tmp/terraform-test/
+        retention-days: 7
+

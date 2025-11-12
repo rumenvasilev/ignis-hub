@@ -49,7 +49,7 @@ func main() {
 	defer stop()
 
 	// Initialize storage based on provider
-	storageProvider, err := storage.NewStorage(ctx, cfg, logger)
+	storageProvider, err := storage.New(ctx, cfg, logger)
 	if err != nil {
 		logger.Error("Failed to initialize storage", "error", err)
 		os.Exit(1)

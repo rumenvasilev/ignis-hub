@@ -106,8 +106,10 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        build-args: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          PREBUILT=true
+        file: Dockerfile
 
     # Create GitHub Release
     - name: Create GitHub Release
