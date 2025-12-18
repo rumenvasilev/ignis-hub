@@ -2,13 +2,14 @@ package gcs
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/md5" // #nosec G501 - MD5 is required by GCS for upload integrity validation
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	gcsstorage "cloud.google.com/go/storage"
 
@@ -27,7 +28,7 @@ func (st *Storage) writeJSONToStorage(ctx context.Context, key string, data inte
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
-	hash := md5.Sum(jsonData)
+	hash := md5.Sum(jsonData) // #nosec G401 - MD5 required by GCS for integrity
 
 	bucket := st.client.Bucket(st.bucket)
 	obj := bucket.Object(key)
@@ -93,8 +94,9 @@ func (st *Storage) Delete(ctx context.Context, id api.ResourceIdentifier) error 
 
 // uploadProviderFile uploads the binary to GCS and returns metadata needed for the rest of the process.
 // The file is closed when this function returns.
-func (st *Storage) uploadProviderFile(ctx context.Context, namespace, typeName, version, osName, arch, filePath string) (filename, key, shasum string, err error) {
-	file, err := os.Open(filePath)
+// path is the local filesystem path to the provider binary file.
+func (st *Storage) uploadProviderFile(ctx context.Context, namespace, typeName, version, osName, arch, path string) (filename, key, shasum string, err error) {
+	file, err := os.Open(filepath.Clean(path)) // #nosec G304 - path from trusted CLI input
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to open file: %w", err)
 	}
@@ -110,7 +112,7 @@ func (st *Storage) uploadProviderFile(ctx context.Context, namespace, typeName, 
 
 	// Calculate SHA256 and MD5 in one pass (SHA256 for metadata, MD5 for GCS integrity)
 	sha256Hash := sha256.New()
-	md5Hash := md5.New()
+	md5Hash := md5.New() // #nosec G401 - MD5 required by GCS for integrity
 	multiWriter := io.MultiWriter(sha256Hash, md5Hash)
 
 	if _, err := io.Copy(multiWriter, file); err != nil {
@@ -173,7 +175,7 @@ func (st *Storage) uploadProviderBinary(ctx context.Context, namespace, typeName
 	}
 
 	// Calculate MD5 checksum for integrity validation
-	metadataMD5 := md5.Sum(platformMetadataJSON)
+	metadataMD5 := md5.Sum(platformMetadataJSON) // #nosec G401 - MD5 required by GCS
 
 	// Upload platform metadata with MD5 checksum for data integrity
 	platformMetadataKey := st.getProviderBinaryMetadataKey(namespace, typeName, version, osName, arch)
@@ -191,6 +193,27 @@ func (st *Storage) uploadProviderBinary(ctx context.Context, namespace, typeName
 	}
 
 	st.logger.Info("Uploaded provider platform metadata", "key", platformMetadataKey)
+
+	// After successful upload, update versions metadata
+	metadata := &models.ProviderMetadata{
+		Namespace: namespace,
+		Type:      typeName,
+		Versions: []models.ProviderVersion{
+			{
+				Version: version,
+				Platforms: []models.Platform{
+					{OS: osName, Arch: arch},
+				},
+			},
+		},
+	}
+
+	if err := st.uploadProviderMetadata(ctx, namespace, typeName, metadata); err != nil {
+		st.logger.Error("Failed to update provider metadata after upload", "error", err)
+		// Don't return error - binary was uploaded successfully
+		// Metadata can be fixed later
+	}
+
 	return nil
 }
 
@@ -232,7 +255,7 @@ func (st *Storage) uploadProviderMetadata(ctx context.Context, namespace, typeNa
 
 	// Merge each version from the incoming metadata
 	for _, newVersion := range metadata.Versions {
-		existingMetadata = api.MergeProviderVersion(existingMetadata, newVersion)
+		existingMetadata = models.MergeProviderVersion(existingMetadata, newVersion)
 	}
 
 	if err := st.writeJSONToStorage(ctx, key, existingMetadata); err != nil {
@@ -243,10 +266,10 @@ func (st *Storage) uploadProviderMetadata(ctx context.Context, namespace, typeNa
 	return nil
 }
 
-// uploadModuleArchive uploads a module archive to api.
-func (st *Storage) uploadModuleArchive(ctx context.Context, namespace, name, system, version, filePath string) error {
-	// Open the file
-	file, err := os.Open(filePath)
+// uploadModuleArchive uploads a module archive to storage.
+// path is the local filesystem path to the module archive file.
+func (st *Storage) uploadModuleArchive(ctx context.Context, namespace, name, system, version, path string) error {
+	file, err := os.Open(filepath.Clean(path)) // #nosec G304 - path from trusted CLI input
 	if err != nil {
 		return fmt.Errorf("failed to open module archive: %w", err)
 	}
@@ -264,7 +287,7 @@ func (st *Storage) uploadModuleArchive(ctx context.Context, namespace, name, sys
 	}
 
 	// Calculate MD5 for GCS integrity validation
-	md5Hash := md5.New()
+	md5Hash := md5.New() // #nosec G401 - MD5 required by GCS for integrity
 	if _, err := io.Copy(md5Hash, file); err != nil {
 		return fmt.Errorf("failed to calculate module archive checksum: %w", err)
 	}
@@ -352,7 +375,7 @@ func (st *Storage) uploadModuleMetadata(ctx context.Context, namespace, name, sy
 
 	// Merge each version from the incoming metadata
 	for _, newVersion := range metadata.Versions {
-		existingMetadata = api.MergeModuleVersion(existingMetadata, newVersion)
+		existingMetadata = models.MergeModuleVersion(existingMetadata, newVersion)
 	}
 
 	if err := st.writeJSONToStorage(ctx, key, existingMetadata); err != nil {

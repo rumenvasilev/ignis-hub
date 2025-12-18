@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -91,8 +92,9 @@ func (st *Storage) Delete(ctx context.Context, id api.ResourceIdentifier) error 
 
 // uploadProviderFile uploads the binary to S3 and returns metadata needed for the rest of the process.
 // The file is closed when this function returns.
-func (st *Storage) uploadProviderFile(ctx context.Context, namespace, typeName, version, osName, arch, filePath string) (filename, key, shasum string, err error) {
-	file, err := os.Open(filePath)
+// path is the local filesystem path to the provider binary file.
+func (st *Storage) uploadProviderFile(ctx context.Context, namespace, typeName, version, osName, arch, path string) (filename, key, shasum string, err error) {
+	file, err := os.Open(filepath.Clean(path)) // #nosec G304 - path from trusted CLI input
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to open file: %w", err)
 	}
@@ -185,6 +187,27 @@ func (st *Storage) uploadProviderBinary(ctx context.Context, namespace, typeName
 	}
 
 	st.logger.Info("Uploaded provider platform metadata", "key", platformMetadataKey)
+
+	// After successful upload, update versions metadata
+	metadata := &models.ProviderMetadata{
+		Namespace: namespace,
+		Type:      typeName,
+		Versions: []models.ProviderVersion{
+			{
+				Version: version,
+				Platforms: []models.Platform{
+					{OS: osName, Arch: arch},
+				},
+			},
+		},
+	}
+
+	if err := st.uploadProviderMetadata(ctx, namespace, typeName, metadata); err != nil {
+		st.logger.Error("Failed to update provider metadata after upload", "error", err)
+		// Don't return error - binary was uploaded successfully
+		// Metadata can be fixed later
+	}
+
 	return nil
 }
 
@@ -224,7 +247,7 @@ func (st *Storage) uploadProviderMetadata(ctx context.Context, namespace, typeNa
 
 	// Merge each version from the incoming metadata
 	for _, newVersion := range metadata.Versions {
-		existingMetadata = api.MergeProviderVersion(existingMetadata, newVersion)
+		existingMetadata = models.MergeProviderVersion(existingMetadata, newVersion)
 	}
 
 	if err := st.writeJSONToStorage(ctx, key, existingMetadata); err != nil {
@@ -235,10 +258,10 @@ func (st *Storage) uploadProviderMetadata(ctx context.Context, namespace, typeNa
 	return nil
 }
 
-// uploadModuleArchive uploads a module archive to api.
-func (st *Storage) uploadModuleArchive(ctx context.Context, namespace, name, system, version, filePath string) error {
-	// Open the file
-	file, err := os.Open(filePath)
+// uploadModuleArchive uploads a module archive to storage.
+// path is the local filesystem path to the module archive file.
+func (st *Storage) uploadModuleArchive(ctx context.Context, namespace, name, system, version, path string) error {
+	file, err := os.Open(filepath.Clean(path)) // #nosec G304 - path from trusted CLI input
 	if err != nil {
 		return fmt.Errorf("failed to open module archive: %w", err)
 	}
@@ -341,7 +364,7 @@ func (st *Storage) uploadModuleMetadata(ctx context.Context, namespace, name, sy
 
 	// Merge each version from the incoming metadata
 	for _, newVersion := range metadata.Versions {
-		existingMetadata = api.MergeModuleVersion(existingMetadata, newVersion)
+		existingMetadata = models.MergeModuleVersion(existingMetadata, newVersion)
 	}
 
 	if err := st.writeJSONToStorage(ctx, key, existingMetadata); err != nil {

@@ -68,7 +68,7 @@ func TestUpload_Provider_Success(t *testing.T) {
 	}, testFile)
 
 	is.NoErr(err)
-	is.Equal(len(uploadedKeys), 2) // Binary + platform metadata
+	is.Equal(len(uploadedKeys), 3) // Binary + platform metadata + versions metadata
 }
 
 func TestUpload_InvalidFile(t *testing.T) {

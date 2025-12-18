@@ -1,10 +1,8 @@
-package api
-
-import "github.com/rumenvasilev/ignis-hub/internal/models"
+package models
 
 // MergeProviderVersion merges a new version into existing provider metadata.
 // If the version already exists, it replaces it. Otherwise, it appends it.
-func MergeProviderVersion(existing *models.ProviderMetadata, newVersion models.ProviderVersion) *models.ProviderMetadata {
+func MergeProviderVersion(existing *ProviderMetadata, newVersion ProviderVersion) *ProviderMetadata {
 	// Find if version already exists
 	existingIndex := -1
 	for i, v := range existing.Versions {
@@ -27,7 +25,7 @@ func MergeProviderVersion(existing *models.ProviderMetadata, newVersion models.P
 
 // MergeModuleVersion merges a new version into existing module metadata.
 // If the version already exists, it replaces it. Otherwise, it appends it.
-func MergeModuleVersion(existing *models.ModuleMetadata, newVersion models.Version) *models.ModuleMetadata {
+func MergeModuleVersion(existing *ModuleMetadata, newVersion Version) *ModuleMetadata {
 	// Find if version already exists
 	existingIndex := -1
 	for i, v := range existing.Versions {

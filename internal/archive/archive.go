@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	ignore "github.com/sabhiram/go-gitignore"
+
+	"github.com/rumenvasilev/ignis-hub/internal/safepath"
 )
 
 const IgnoreFileName = ".ignishubctlignore"
@@ -33,7 +35,7 @@ func CreateTgz(srcDir, destFile string) error {
 	}
 
 	// Create output file
-	outFile, err := os.Create(destFile)
+	outFile, err := os.Create(filepath.Clean(destFile)) // #nosec G304 - path from trusted CLI input
 	if err != nil {
 		return fmt.Errorf("failed to create archive file: %w", err)
 	}
@@ -78,12 +80,13 @@ func makeWalkFunc(srcDir string, ignorer *ignore.GitIgnore, tarWriter *tar.Write
 			return nil
 		}
 
-		return addToArchive(path, relPath, info, tarWriter)
+		return addToArchive(srcDir, path, relPath, info, tarWriter)
 	}
 }
 
 // addToArchive adds a single file or directory to the tar archive.
-func addToArchive(path, relPath string, info os.FileInfo, tarWriter *tar.Writer) error {
+// baseDir is used for path containment validation to prevent path traversal.
+func addToArchive(baseDir, path, relPath string, info os.FileInfo, tarWriter *tar.Writer) error {
 	// Create tar header
 	header, err := tar.FileInfoHeader(info, "")
 	if err != nil {
@@ -109,7 +112,7 @@ func addToArchive(path, relPath string, info os.FileInfo, tarWriter *tar.Writer)
 
 	// Write file content (only for regular files)
 	if info.Mode().IsRegular() {
-		file, err := os.Open(path)
+		file, err := safepath.OpenFile(baseDir, path)
 		if err != nil {
 			return fmt.Errorf("failed to open file: %w", err)
 		}

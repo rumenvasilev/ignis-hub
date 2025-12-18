@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,6 +23,7 @@ import (
 	"github.com/rumenvasilev/ignis-hub/internal/archive"
 	"github.com/rumenvasilev/ignis-hub/internal/config"
 	"github.com/rumenvasilev/ignis-hub/internal/models"
+	"github.com/rumenvasilev/ignis-hub/internal/safepath"
 	"github.com/rumenvasilev/ignis-hub/internal/storage"
 	"github.com/rumenvasilev/ignis-hub/internal/storage/api"
 )
@@ -355,8 +360,8 @@ func listProviders(c *cli.Context) error {
 
 	// Print results in a formatted table
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "NAMESPACE\tTYPE\tVERSIONS")
-	fmt.Fprintln(w, "---------\t----\t--------")
+	fmt.Fprintln(w, "PROVIDER\tVERSIONS")
+	fmt.Fprintln(w, "--------\t--------")
 
 	var versionsMsg string
 	for _, resource := range resources {
@@ -366,10 +371,11 @@ func listProviders(c *cli.Context) error {
 		} else {
 			versionsMsg = "No versions"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", resource.Namespace, resource.Name, versionsMsg)
+		// Format: namespace/type (matches Terraform provider source format)
+		fmt.Fprintf(w, "%s/%s\t%s\n", resource.Namespace, resource.Name, versionsMsg)
 	}
 
-	w.Flush()
+	_ = w.Flush() // #nosec G104 - stdout flush error is non-critical
 	return nil
 }
 
@@ -391,8 +397,8 @@ func listModules(c *cli.Context) error {
 
 	// Print results in a formatted table
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "NAMESPACE\tNAME\tSYSTEM\tVERSIONS")
-	fmt.Fprintln(w, "---------\t----\t------\t--------")
+	fmt.Fprintln(w, "MODULE\tVERSIONS")
+	fmt.Fprintln(w, "------\t--------")
 
 	var versionsMsg string
 	for _, resource := range resources {
@@ -402,10 +408,11 @@ func listModules(c *cli.Context) error {
 		} else {
 			versionsMsg = "No versions"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", resource.Namespace, resource.Name, resource.System, versionsMsg)
+		// Format: namespace/name/system (matches Terraform module source format)
+		fmt.Fprintf(w, "%s/%s/%s\t%s\n", resource.Namespace, resource.Name, resource.System, versionsMsg)
 	}
 
-	w.Flush()
+	_ = w.Flush() // #nosec G104 - stdout flush error is non-critical
 	return nil
 }
 
@@ -455,7 +462,7 @@ func listProviderVersions(c *cli.Context) error {
 		fmt.Fprintf(w, "%s\t%s\t%s\n", version.Version, protocolsMsg, platformsMsg)
 	}
 
-	w.Flush()
+	_ = w.Flush() // #nosec G104 - stdout flush error is non-critical
 	return nil
 }
 
@@ -496,7 +503,7 @@ func listModuleVersions(c *cli.Context) error {
 		fmt.Fprintf(w, "%s\n", version.Version)
 	}
 
-	w.Flush()
+	_ = w.Flush() // #nosec G104 - stdout flush error is non-critical
 	return nil
 }
 
@@ -601,7 +608,7 @@ func addModule(c *cli.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to create archive: %w", err)
 		}
-		cleanup = func() { os.Remove(archivePath) }
+		cleanup = func() { _ = os.Remove(archivePath) } // #nosec G104 - cleanup error is non-critical
 
 		// Get archive size for display
 		if info, err := os.Stat(archivePath); err == nil {
@@ -719,14 +726,14 @@ func cloneProvider(c *cli.Context) error {
 
 	// Create temp directory
 	providerTempDir := filepath.Join(tempDir, namespace, typeName, version)
-	if err := os.MkdirAll(providerTempDir, 0755); err != nil {
+	if err := os.MkdirAll(providerTempDir, 0750); err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
 	if !keepTemp {
 		defer func() {
 			fmt.Printf("\n🧹 Cleaning up temporary files...\n")
-			os.RemoveAll(filepath.Join(tempDir, namespace))
+			_ = os.RemoveAll(filepath.Join(tempDir, namespace)) // #nosec G104 - cleanup error is non-critical
 		}()
 	}
 
@@ -828,32 +835,28 @@ func downloadProviderPlatform(client *http.Client, namespace, name, version, osN
 
 	// Create platform directory
 	platformDir := filepath.Join(tempDir, osName, arch)
-	if err := os.MkdirAll(platformDir, 0755); err != nil {
+	if err := os.MkdirAll(platformDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create platform directory: %w", err)
 	}
 
 	result := &downloadedProviderInfo{}
 
-	// Download the binary
-	binaryPath := filepath.Join(platformDir, downloadInfo.Filename)
-	if err := downloadFile(client, downloadInfo.DownloadURL, binaryPath); err != nil {
-		return nil, fmt.Errorf("failed to download binary: %w", err)
-	}
-	result.BinaryFile = binaryPath
+	// Step 1: Download SHA256SUMS file first (required for verification)
+	checksumFilename := fmt.Sprintf("terraform-provider-%s_%s_SHA256SUMS", name, version)
+	checksumPath := filepath.Join(tempDir, checksumFilename)
 
-	// Download checksum files (shared across platforms)
-	if downloadInfo.ShasumsURL != "" {
-		checksumFilename := fmt.Sprintf("terraform-provider-%s_%s_SHA256SUMS", name, version)
-		checksumPath := filepath.Join(tempDir, checksumFilename)
-		if _, err := os.Stat(checksumPath); os.IsNotExist(err) {
-			if err := downloadFile(client, downloadInfo.ShasumsURL, checksumPath); err == nil {
-				result.ChecksumFile = checksumPath
-			}
-		} else {
-			result.ChecksumFile = checksumPath
+	// Only download if we don't already have it (shared across platforms)
+	if _, err := os.Stat(checksumPath); os.IsNotExist(err) {
+		if downloadInfo.ShasumsURL == "" {
+			return nil, fmt.Errorf("no SHA256SUMS URL available - cannot verify integrity")
+		}
+		if err := downloadFile(client, downloadInfo.ShasumsURL, checksumPath); err != nil {
+			return nil, fmt.Errorf("failed to download SHA256SUMS: %w", err)
 		}
 	}
+	result.ChecksumFile = checksumPath
 
+	// Step 2: Download signature file (optional, for future GPG verification)
 	if downloadInfo.ShasumsSignatureURL != "" {
 		checksumSigFilename := fmt.Sprintf("terraform-provider-%s_%s_SHA256SUMS.sig", name, version)
 		checksumSigPath := filepath.Join(tempDir, checksumSigFilename)
@@ -866,6 +869,35 @@ func downloadProviderPlatform(client *http.Client, namespace, name, version, osN
 		}
 	}
 
+	// Step 3: Parse SHA256SUMS to get expected checksum for this binary
+	checksums, err := parseChecksumFile(tempDir, checksumPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse SHA256SUMS: %w", err)
+	}
+	expectedChecksum, ok := checksums[downloadInfo.Filename]
+	if !ok {
+		return nil, fmt.Errorf("checksum for %s not found in SHA256SUMS file", downloadInfo.Filename)
+	}
+
+	// Step 4: Download the binary - validate filename doesn't escape temp directory
+	binaryPath := filepath.Join(platformDir, downloadInfo.Filename)
+	if err := safepath.ValidateContainment(tempDir, binaryPath); err != nil {
+		return nil, fmt.Errorf("invalid filename from registry (possible path traversal): %w", err)
+	}
+	if err := downloadFile(client, downloadInfo.DownloadURL, binaryPath); err != nil {
+		return nil, fmt.Errorf("failed to download binary: %w", err)
+	}
+
+	// Step 5: Verify the binary against checksum from SHA256SUMS file
+	if err := verifyFileChecksum(tempDir, binaryPath, expectedChecksum); err != nil {
+		// Remove the corrupted/tampered file
+		_ = os.Remove(binaryPath)
+		return nil, fmt.Errorf("checksum verification failed for %s: %w", downloadInfo.Filename, err)
+	}
+	fmt.Printf("  ✓ Checksum verified for %s\n", downloadInfo.Filename)
+
+	result.BinaryFile = binaryPath
+
 	// Create metadata.json for this platform
 	metadata := map[string]interface{}{
 		"os":           downloadInfo.OS,
@@ -877,7 +909,7 @@ func downloadProviderPlatform(client *http.Client, namespace, name, version, osN
 	}
 
 	metadataPath := filepath.Join(platformDir, "metadata.json")
-	metadataFile, err := os.Create(metadataPath)
+	metadataFile, err := os.Create(metadataPath) // #nosec G304 - path constructed from known directory
 	if err != nil {
 		return nil, fmt.Errorf("failed to create metadata file: %w", err)
 	}
@@ -893,8 +925,114 @@ func downloadProviderPlatform(client *http.Client, namespace, name, version, osN
 	return result, nil
 }
 
-func downloadFile(client *http.Client, url, destPath string) error {
-	resp, err := client.Get(url)
+// parseChecksumFile reads a SHA256SUMS file and returns a map of filename -> checksum.
+// The file format is: "<sha256_hash>  <filename>" (two spaces between hash and filename).
+// baseDir is used for path containment validation.
+func parseChecksumFile(baseDir, path string) (map[string]string, error) {
+	data, err := safepath.ReadFile(baseDir, path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read checksum file: %w", err)
+	}
+
+	checksums := make(map[string]string)
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Format: "<hash>  <filename>" (two spaces)
+		parts := strings.SplitN(line, "  ", 2)
+		if len(parts) != 2 {
+			// Try single space as fallback
+			parts = strings.SplitN(line, " ", 2)
+			if len(parts) != 2 {
+				continue
+			}
+		}
+		hash := strings.TrimSpace(parts[0])
+		filename := strings.TrimSpace(parts[1])
+		// Handle *filename format (binary mode indicator)
+		filename = strings.TrimPrefix(filename, "*")
+		checksums[filename] = hash
+	}
+
+	if len(checksums) == 0 {
+		return nil, fmt.Errorf("no valid checksums found in file")
+	}
+
+	return checksums, nil
+}
+
+// verifyFileChecksum computes the SHA256 hash of a file and compares it
+// against the expected checksum. This ensures the downloaded file hasn't
+// been tampered with or corrupted during transfer.
+// baseDir is used for path containment validation.
+// path is the local filesystem path to the downloaded file.
+func verifyFileChecksum(baseDir, path, expectedChecksum string) error {
+	file, err := safepath.OpenFile(baseDir, path)
+	if err != nil {
+		return fmt.Errorf("failed to open file for checksum: %w", err)
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return fmt.Errorf("failed to compute checksum: %w", err)
+	}
+
+	actualChecksum := hex.EncodeToString(hash.Sum(nil))
+	if !strings.EqualFold(actualChecksum, expectedChecksum) {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedChecksum, actualChecksum)
+	}
+
+	return nil
+}
+
+// allowedDownloadHosts contains the permitted hosts for provider downloads.
+// These are the known hosts used by HashiCorp and common provider registries.
+var allowedDownloadHosts = map[string]bool{
+	"releases.hashicorp.com":        true,
+	"github.com":                    true,
+	"objects.githubusercontent.com": true,
+	"registry.terraform.io":         true,
+	"registry.opentofu.org":         true,
+}
+
+// validateDownloadURL ensures the URL is safe to fetch (prevents SSRF attacks).
+func validateDownloadURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	// Require HTTPS
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("URL must use HTTPS scheme, got: %s", parsed.Scheme)
+	}
+
+	// Check against allowlist
+	if !allowedDownloadHosts[parsed.Host] {
+		return fmt.Errorf("host %q not in allowed download hosts", parsed.Host)
+	}
+
+	// Reject private IP ranges (defense in depth)
+	if ip := net.ParseIP(parsed.Hostname()); ip != nil {
+		if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+			return fmt.Errorf("URL points to private/local IP address")
+		}
+	}
+
+	return nil
+}
+
+func downloadFile(client *http.Client, downloadURL, destPath string) error {
+	// Validate URL to prevent SSRF attacks
+	if err := validateDownloadURL(downloadURL); err != nil {
+		return fmt.Errorf("URL validation failed: %w", err)
+	}
+
+	resp, err := client.Get(downloadURL)
 	if err != nil {
 		return err
 	}
@@ -904,7 +1042,7 @@ func downloadFile(client *http.Client, url, destPath string) error {
 		return fmt.Errorf("download returned status %d", resp.StatusCode)
 	}
 
-	out, err := os.Create(destPath)
+	out, err := os.Create(destPath) // #nosec G304 - callers validate path containment or construct filename
 	if err != nil {
 		return err
 	}
