@@ -1,0 +1,17 @@
+# Ignore backup files
+*.backup
+*.bak
+
+# Ignore Terraform state and cache
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# Ignore IDE files
+.idea/
+.vscode/
+*.swp
+
+# Ignore test files that shouldn't be in the archive
+should-be-ignored.txt
+

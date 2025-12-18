@@ -44,8 +44,8 @@ jobs:
           echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
         fi
 
-    # Build binaries for multiple platforms
-    - name: Build binaries
+    # Build server binaries for multiple platforms
+    - name: Build server (ignis-hub)
       run: |
         VERSION=${{ steps.get_version.outputs.VERSION }}
         mkdir -p dist
@@ -62,16 +62,41 @@ jobs:
         # Darwin ARM64
         GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${VERSION}" -o dist/ignis-hub-darwin-arm64 .
 
+    # Build client binaries for multiple platforms
+    - name: Build client (ignishubctl)
+      run: |
+        VERSION=${{ steps.get_version.outputs.VERSION }}
+        
+        # Linux AMD64
+        GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/ignishubctl-linux-amd64 ./cmd/ignishubctl
+        
+        # Linux ARM64
+        GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/ignishubctl-linux-arm64 ./cmd/ignishubctl
+        
+        # Darwin AMD64
+        GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/ignishubctl-darwin-amd64 ./cmd/ignishubctl
+        
+        # Darwin ARM64
+        GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/ignishubctl-darwin-arm64 ./cmd/ignishubctl
+
     # Create release archives
     - name: Create release archives
       run: |
         cd dist
+        
+        # Server archives
         tar -czf ignis-hub-linux-amd64.tar.gz ignis-hub-linux-amd64
         tar -czf ignis-hub-linux-arm64.tar.gz ignis-hub-linux-arm64
         tar -czf ignis-hub-darwin-amd64.tar.gz ignis-hub-darwin-amd64
         tar -czf ignis-hub-darwin-arm64.tar.gz ignis-hub-darwin-arm64
         
-        # Generate checksums
+        # Client archives
+        tar -czf ignishubctl-linux-amd64.tar.gz ignishubctl-linux-amd64
+        tar -czf ignishubctl-linux-arm64.tar.gz ignishubctl-linux-arm64
+        tar -czf ignishubctl-darwin-amd64.tar.gz ignishubctl-darwin-amd64
+        tar -czf ignishubctl-darwin-arm64.tar.gz ignishubctl-darwin-arm64
+        
+        # Generate checksums for all archives
         sha256sum *.tar.gz > checksums.txt
 
     # Docker Hub login and build

@@ -44,22 +44,30 @@ jobs:
         echo "📦 Creating S3 bucket..."
         awslocal s3 mb s3://terraform-registry
         
-        echo "📤 Uploading sample data..."
-        if [ -d examples ]; then
+        echo "📤 Uploading test fixtures (providers and modules)..."
+        if [ -d testfixtures ]; then
           awslocal s3 sync testfixtures s3://terraform-registry/registry --delete
         fi
         
         echo "📋 Listing bucket contents..."
-        awslocal s3 ls s3://terraform-registry/registry --recursive
+        awslocal s3 ls s3://terraform-registry/registry/ --recursive
         
-        echo "✅ S3 bucket initialized"
+        echo "✅ S3 bucket initialized with providers and modules"
 
-    - name: Build and start registry
+    - name: Build registry
       run: |
         echo "🔨 Building ignis-hub registry..."
         go build -v -o ignis-hub .
         chmod +x ignis-hub
-        
+
+    - name: Build ignishubctl CLI
+      run: |
+        echo "🔨 Building ignishubctl CLI..."
+        go build -v -o ignishubctl ./cmd/ignishubctl
+        chmod +x ignishubctl
+
+    - name: Start registry
+      run: |
         echo "🚀 Starting Terraform Registry in background..."
         REGISTRY_AWS_REGION=us-east-1 \
         REGISTRY_AWS_S3_BUCKET=terraform-registry \
@@ -91,6 +99,13 @@ jobs:
       run: |
         echo "🧪 Running E2E tests..."
         ./scripts/e2e-test.sh
+      env: # needed for ignishubctl
+        REGISTRY_AWS_REGION: us-east-1
+        REGISTRY_AWS_S3_BUCKET: terraform-registry
+        REGISTRY_AWS_S3_PREFIX: registry
+        REGISTRY_AWS_ENDPOINT: http://localhost:4566
+        REGISTRY_AWS_ACCESS_KEY_ID: test
+        REGISTRY_AWS_SECRET_ACCESS_KEY: test
 
     - name: Test Terraform integration
       run: |

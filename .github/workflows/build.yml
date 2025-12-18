@@ -32,18 +32,31 @@ jobs:
     - name: Verify dependencies
       run: go mod verify
 
-    - name: Build binary
+    - name: Build server (ignis-hub)
       env:
         GOOS: ${{ matrix.os }}
         GOARCH: ${{ matrix.arch }}
         CGO_ENABLED: 0
-      run: |
-        go build -v -ldflags="-s -w" -o ignis-hub-${{ matrix.os }}-${{ matrix.arch }} .
+      run: go build -v -ldflags="-s -w" -o ignis-hub-${{ matrix.os }}-${{ matrix.arch }} .
 
-    - name: Upload artifact
+    - name: Build client (ignishubctl)
+      env:
+        GOOS: ${{ matrix.os }}
+        GOARCH: ${{ matrix.arch }}
+        CGO_ENABLED: 0
+      run: go build -v -ldflags="-s -w" -o ignishubctl-${{ matrix.os }}-${{ matrix.arch }} ./cmd/ignishubctl
+
+    - name: Upload ignis-hub artifact
       uses: actions/upload-artifact@v4
       with:
         name: ignis-hub-${{ matrix.os }}-${{ matrix.arch }}
         path: ignis-hub-${{ matrix.os }}-${{ matrix.arch }}
+        retention-days: 7
+
+    - name: Upload ignishubctl artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ignishubctl-${{ matrix.os }}-${{ matrix.arch }}
+        path: ignishubctl-${{ matrix.os }}-${{ matrix.arch }}
         retention-days: 7
 

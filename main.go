@@ -18,6 +18,7 @@ import (
 	"github.com/rumenvasilev/ignis-hub/internal/handlers"
 	"github.com/rumenvasilev/ignis-hub/internal/middleware"
 	"github.com/rumenvasilev/ignis-hub/internal/storage"
+	"github.com/rumenvasilev/ignis-hub/internal/storage/api"
 )
 
 var Version = "dev"
@@ -176,7 +177,7 @@ func setupMiddleware(router *gin.Engine, cfg *config.Config, logger *slog.Logger
 	router.Use(authMiddleware.Auth())
 }
 
-func setupRoutes(router *gin.Engine, storage storage.Storage, cfg *config.Config, logger *slog.Logger) {
+func setupRoutes(router *gin.Engine, storage api.Storage, cfg *config.Config, logger *slog.Logger) {
 	// Initialize handlers
 	registryHandlers := handlers.NewRegistryHandlers(storage, cfg, logger)
 
