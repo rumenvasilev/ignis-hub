@@ -1,4 +1,4 @@
-package storage
+package api
 
 // Example usage of typed errors
 //

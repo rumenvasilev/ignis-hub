@@ -9,19 +9,24 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/urfave/cli/v2"
 
+	"github.com/rumenvasilev/ignis-hub/internal/archive"
 	"github.com/rumenvasilev/ignis-hub/internal/config"
 	"github.com/rumenvasilev/ignis-hub/internal/models"
 	"github.com/rumenvasilev/ignis-hub/internal/storage"
+	"github.com/rumenvasilev/ignis-hub/internal/storage/api"
 )
 
+// version is set via ldflags at build time
+var version = "dev"
+
 const (
-	version             = "0.1.0"
 	officialRegistryURL = "https://registry.terraform.io"
 	defaultTempDir      = "/tmp/ignishubctl"
 )
@@ -194,10 +199,14 @@ func cliApp() *cli.App {
 						Usage:    "Module version",
 					},
 					&cli.StringFlag{
-						Name:     "file",
-						Aliases:  []string{"f"},
-						Required: true,
-						Usage:    "Path to module archive file",
+						Name:    "file",
+						Aliases: []string{"f"},
+						Usage:   "Path to module archive file (.tar.gz)",
+					},
+					&cli.StringFlag{
+						Name:    "dir",
+						Aliases: []string{"d"},
+						Usage:   "Path to module directory (will be archived, respects .ignishubctlignore)",
 					},
 				},
 				Action: addModule,
@@ -302,7 +311,7 @@ func cliApp() *cli.App {
 }
 
 // getStorage initializes and returns a storage instance based on the CLI context
-func getStorage(c *cli.Context) (storage.Storage, error) {
+func getStorage(c *cli.Context) (api.Storage, error) {
 	ctx := context.Background()
 
 	// Load configuration
@@ -317,7 +326,7 @@ func getStorage(c *cli.Context) (storage.Storage, error) {
 		Level: slog.LevelWarn, // Only show warnings and errors for CLI
 	}))
 
-	// Create storage
+	// Create storage based on provider
 	store, err := storage.New(ctx, cfg, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage: %w", err)
@@ -334,7 +343,7 @@ func listProviders(c *cli.Context) error {
 		return err
 	}
 
-	resources, err := store.List(context.Background(), storage.ResourceTypeProvider)
+	resources, err := store.List(context.Background(), api.ResourceTypeProvider)
 	if err != nil {
 		return fmt.Errorf("failed to list providers: %w", err)
 	}
@@ -349,14 +358,15 @@ func listProviders(c *cli.Context) error {
 	fmt.Fprintln(w, "NAMESPACE\tTYPE\tVERSIONS")
 	fmt.Fprintln(w, "---------\t----\t--------")
 
+	var versionsMsg string
 	for _, resource := range resources {
-		versions := ""
+		versionsMsg = ""
 		if len(resource.Versions) > 0 {
-			versions = fmt.Sprintf("%d version(s)", len(resource.Versions))
+			versionsMsg = fmt.Sprintf("%d version(s)", len(resource.Versions))
 		} else {
-			versions = "No versions"
+			versionsMsg = "No versions"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", resource.Namespace, resource.Name, versions)
+		fmt.Fprintf(w, "%s\t%s\t%s\n", resource.Namespace, resource.Name, versionsMsg)
 	}
 
 	w.Flush()
@@ -369,7 +379,7 @@ func listModules(c *cli.Context) error {
 		return err
 	}
 
-	resources, err := store.List(context.Background(), storage.ResourceTypeModule)
+	resources, err := store.List(context.Background(), api.ResourceTypeModule)
 	if err != nil {
 		return fmt.Errorf("failed to list modules: %w", err)
 	}
@@ -384,14 +394,15 @@ func listModules(c *cli.Context) error {
 	fmt.Fprintln(w, "NAMESPACE\tNAME\tSYSTEM\tVERSIONS")
 	fmt.Fprintln(w, "---------\t----\t------\t--------")
 
+	var versionsMsg string
 	for _, resource := range resources {
-		versions := ""
+		versionsMsg = ""
 		if len(resource.Versions) > 0 {
-			versions = fmt.Sprintf("%d version(s)", len(resource.Versions))
+			versionsMsg = fmt.Sprintf("%d version(s)", len(resource.Versions))
 		} else {
-			versions = "No versions"
+			versionsMsg = "No versions"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", resource.Namespace, resource.Name, resource.System, versions)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", resource.Namespace, resource.Name, resource.System, versionsMsg)
 	}
 
 	w.Flush()
@@ -407,8 +418,8 @@ func listProviderVersions(c *cli.Context) error {
 	namespace := c.String("namespace")
 	typeName := c.String("type")
 
-	versionsResp, err := store.GetVersions(context.Background(), storage.ResourceIdentifier{
-		Type:      storage.ResourceTypeProvider,
+	versionsResp, err := store.GetVersions(context.Background(), api.ResourceIdentifier{
+		Type:      api.ResourceTypeProvider,
 		Namespace: namespace,
 		Name:      typeName,
 	})
@@ -429,18 +440,19 @@ func listProviderVersions(c *cli.Context) error {
 	fmt.Fprintln(w, "VERSION\tPROTOCOLS\tPLATFORMS")
 	fmt.Fprintln(w, "-------\t---------\t---------")
 
+	var protocolsMsg, platformsMsg string
 	for _, version := range metadata.Versions {
-		protocols := ""
+		protocolsMsg = ""
 		if len(version.Protocols) > 0 {
-			protocols = fmt.Sprintf("%v", version.Protocols)
+			protocolsMsg = fmt.Sprintf("%v", version.Protocols)
 		}
 
-		platforms := ""
+		platformsMsg = ""
 		if len(version.Platforms) > 0 {
-			platforms = fmt.Sprintf("%d platform(s)", len(version.Platforms))
+			platformsMsg = fmt.Sprintf("%d platform(s)", len(version.Platforms))
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\n", version.Version, protocols, platforms)
+		fmt.Fprintf(w, "%s\t%s\t%s\n", version.Version, protocolsMsg, platformsMsg)
 	}
 
 	w.Flush()
@@ -457,8 +469,8 @@ func listModuleVersions(c *cli.Context) error {
 	name := c.String("name")
 	system := c.String("system")
 
-	versionsResp, err := store.GetVersions(context.Background(), storage.ResourceIdentifier{
-		Type:      storage.ResourceTypeModule,
+	versionsResp, err := store.GetVersions(context.Background(), api.ResourceIdentifier{
+		Type:      api.ResourceTypeModule,
 		Namespace: namespace,
 		Name:      name,
 		System:    system,
@@ -506,10 +518,15 @@ func addProvider(c *cli.Context) error {
 		return fmt.Errorf("file not found: %s", filePath)
 	}
 
+	// validate the file is a valid provider binary
+	if !isValidProviderBinary(filePath) {
+		return fmt.Errorf("file is not a valid provider binary")
+	}
+
 	fmt.Printf("Adding provider %s/%s version %s for %s/%s...\n", namespace, typeName, version, osName, arch)
 
-	err = store.Upload(context.Background(), storage.ResourceIdentifier{
-		Type:      storage.ResourceTypeProvider,
+	err = store.Upload(context.Background(), api.ResourceIdentifier{
+		Type:      api.ResourceTypeProvider,
 		Namespace: namespace,
 		Name:      typeName,
 		Version:   version,
@@ -524,6 +541,17 @@ func addProvider(c *cli.Context) error {
 	return nil
 }
 
+func isValidProviderBinary(filePath string) bool {
+	// TODO: Implement provider binary validation
+	// TODO: Implement name,os,arch validation
+
+	// Validate the filename format
+	// terraform-provider-fastssm_5.100.0_linux_arm64.zip
+	ver := regexp.MustCompile(`terraform-provider-([a-zA-Z0-9_-]+)_(\d+\.\d+\.\d+)_(linux|darwin|windows)_(amd64|arm64).zip`)
+	matches := ver.FindStringSubmatch(filePath)
+	return len(matches) != 0
+}
+
 func addModule(c *cli.Context) error {
 	store, err := getStorage(c)
 	if err != nil {
@@ -535,21 +563,67 @@ func addModule(c *cli.Context) error {
 	system := c.String("system")
 	version := c.String("version")
 	filePath := c.String("file")
+	dirPath := c.String("dir")
 
-	// Check if file exists
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return fmt.Errorf("file not found: %s", filePath)
+	// Validate that exactly one of --file or --dir is provided
+	if filePath == "" && dirPath == "" {
+		return fmt.Errorf("either --file or --dir must be specified")
+	}
+	if filePath != "" && dirPath != "" {
+		return fmt.Errorf("only one of --file or --dir can be specified, not both")
+	}
+
+	// Default to using the provided file path (no cleanup needed)
+	archivePath := filePath
+	cleanup := func() {}
+
+	// If directory provided, create archive instead
+	if dirPath != "" {
+		// Verify directory exists
+		info, err := os.Stat(dirPath)
+		if err != nil {
+			return fmt.Errorf("directory error: %w", err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("not a directory: %s", dirPath)
+		}
+
+		fmt.Printf("Archiving module from %s...\n", dirPath)
+
+		// Check for .ignishubctlignore
+		ignoreFile := filepath.Join(dirPath, archive.IgnoreFileName)
+		if _, err := os.Stat(ignoreFile); err == nil {
+			fmt.Printf("Using ignore patterns from %s\n", archive.IgnoreFileName)
+		}
+
+		// Create temporary archive
+		archivePath, err = archive.CreateTempTgz(dirPath)
+		if err != nil {
+			return fmt.Errorf("failed to create archive: %w", err)
+		}
+		cleanup = func() { os.Remove(archivePath) }
+
+		// Get archive size for display
+		if info, err := os.Stat(archivePath); err == nil {
+			fmt.Printf("Created archive: %s (%.2f KB)\n", filepath.Base(archivePath), float64(info.Size())/1024)
+		}
+	}
+	defer cleanup()
+
+	// Safety check: verify archive exists
+	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
+		return fmt.Errorf("archive not found: %s", archivePath)
 	}
 
 	fmt.Printf("Adding module %s/%s/%s version %s...\n", namespace, name, system, version)
 
-	err = store.Upload(context.Background(), storage.ResourceIdentifier{
-		Type:      storage.ResourceTypeModule,
+	err = store.Upload(context.Background(), api.ResourceIdentifier{
+		Type:      api.ResourceTypeModule,
 		Namespace: namespace,
 		Name:      name,
 		System:    system,
 		Version:   version,
-	}, filePath)
+	}, archivePath)
 	if err != nil {
 		return fmt.Errorf("failed to upload module: %w", err)
 	}
@@ -570,8 +644,8 @@ func removeProvider(c *cli.Context) error {
 
 	fmt.Printf("Removing provider %s/%s version %s...\n", namespace, typeName, version)
 
-	err = store.Delete(context.Background(), storage.ResourceIdentifier{
-		Type:      storage.ResourceTypeProvider,
+	err = store.Delete(context.Background(), api.ResourceIdentifier{
+		Type:      api.ResourceTypeProvider,
 		Namespace: namespace,
 		Name:      typeName,
 		Version:   version,
@@ -597,8 +671,8 @@ func removeModule(c *cli.Context) error {
 
 	fmt.Printf("Removing module %s/%s/%s version %s...\n", namespace, name, system, version)
 
-	err = store.Delete(context.Background(), storage.ResourceIdentifier{
-		Type:      storage.ResourceTypeModule,
+	err = store.Delete(context.Background(), api.ResourceIdentifier{
+		Type:      api.ResourceTypeModule,
 		Namespace: namespace,
 		Name:      name,
 		System:    system,
@@ -840,7 +914,7 @@ func downloadFile(client *http.Client, url, destPath string) error {
 	return err
 }
 
-func uploadProvider(store storage.Storage, namespace, typeName, version, tempDir string, platforms []models.Platform) error {
+func uploadProvider(store api.Storage, namespace, typeName, version, tempDir string, platforms []models.Platform) error {
 	ctx := context.Background()
 
 	// Upload each platform's files
@@ -867,8 +941,8 @@ func uploadProvider(store storage.Storage, namespace, typeName, version, tempDir
 
 		// Upload the binary
 		fmt.Printf("  📤 Uploading %s/%s binary...\n", platform.OS, platform.Arch)
-		if err := store.Upload(ctx, storage.ResourceIdentifier{
-			Type:      storage.ResourceTypeProvider,
+		if err := store.Upload(ctx, api.ResourceIdentifier{
+			Type:      api.ResourceTypeProvider,
 			Namespace: namespace,
 			Name:      typeName,
 			Version:   version,
@@ -906,8 +980,8 @@ func uploadProvider(store storage.Storage, namespace, typeName, version, tempDir
 	}
 
 	fmt.Printf("  📤 Uploading provider metadata...\n")
-	if err := store.UpdateMetadata(ctx, storage.ResourceIdentifier{
-		Type:      storage.ResourceTypeProvider,
+	if err := store.UpdateMetadata(ctx, api.ResourceIdentifier{
+		Type:      api.ResourceTypeProvider,
 		Namespace: namespace,
 		Name:      typeName,
 	}, providerMetadata); err != nil {

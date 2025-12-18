@@ -34,7 +34,7 @@ log_info "Testing Terraform integration with registry at ${BASE_URL}"
 TEST_DIR=$(mktemp -d)
 cd "$TEST_DIR"
 
-# Create Terraform configuration
+# Create Terraform configuration for provider test
 log_info "Creating Terraform configuration..."
 cat > main.tf << 'EOF'
 terraform {
@@ -49,6 +49,12 @@ terraform {
 # This is just to test provider resolution, not actual resources
 provider "provider" {
 
+}
+
+# Test module from our registry
+module "hello" {
+  source  = "localhost:8080/demo/hello/aws"
+  version = "1.0.0"
 }
 EOF
 

@@ -5,3 +5,6 @@ scripts/examples/
 .terraform.lock.hcl
 tmp/
 *.tfvars
+examples/
+ignis-hub
+ignishubctl

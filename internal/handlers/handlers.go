@@ -10,16 +10,16 @@ import (
 
 	"github.com/rumenvasilev/ignis-hub/internal/config"
 	"github.com/rumenvasilev/ignis-hub/internal/models"
-	"github.com/rumenvasilev/ignis-hub/internal/storage"
+	"github.com/rumenvasilev/ignis-hub/internal/storage/api"
 )
 
 type RegistryHandlers struct {
-	storage storage.Storage
+	storage api.Storage
 	config  *config.Config
 	logger  *slog.Logger
 }
 
-func NewRegistryHandlers(storage storage.Storage, cfg *config.Config, logger *slog.Logger) *RegistryHandlers {
+func NewRegistryHandlers(storage api.Storage, cfg *config.Config, logger *slog.Logger) *RegistryHandlers {
 	return &RegistryHandlers{
 		storage: storage,
 		config:  cfg,
@@ -59,8 +59,8 @@ func (h *RegistryHandlers) ListModuleVersions(c *gin.Context) {
 		"name", params.Name,
 		"system", params.System)
 
-	metadata, err := h.storage.GetVersions(c.Request.Context(), storage.ResourceIdentifier{
-		Type:      storage.ResourceTypeModule,
+	metadata, err := h.storage.GetVersions(c.Request.Context(), api.ResourceIdentifier{
+		Type:      api.ResourceTypeModule,
 		Namespace: params.Namespace,
 		Name:      params.Name,
 		System:    params.System,
@@ -68,7 +68,7 @@ func (h *RegistryHandlers) ListModuleVersions(c *gin.Context) {
 	if err != nil {
 		h.logger.Error("Failed to get module versions", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
-			Errors: []string{storage.ErrModuleNotFound.Error()},
+			Errors: []string{api.ErrModuleNotFound.Error()},
 		})
 		return
 	}
@@ -101,8 +101,8 @@ func (h *RegistryHandlers) GetModuleVersion(c *gin.Context) {
 		"system", params.System,
 		"version", params.Version)
 
-	downloadInfo, err := h.storage.GetDownloadInfo(c.Request.Context(), storage.ResourceIdentifier{
-		Type:      storage.ResourceTypeModule,
+	downloadInfo, err := h.storage.GetDownloadInfo(c.Request.Context(), api.ResourceIdentifier{
+		Type:      api.ResourceTypeModule,
 		Namespace: params.Namespace,
 		Name:      params.Name,
 		System:    params.System,
@@ -111,7 +111,7 @@ func (h *RegistryHandlers) GetModuleVersion(c *gin.Context) {
 	if err != nil {
 		h.logger.Error("Failed to get module download URL", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
-			Errors: []string{storage.ErrModuleVersionNotFound.Error()},
+			Errors: []string{api.ErrModuleVersionNotFound.Error()},
 		})
 		return
 	}
@@ -136,15 +136,15 @@ func (h *RegistryHandlers) ListProviderVersions(c *gin.Context) {
 		"namespace", params.Namespace,
 		"type", params.Type)
 
-	versionsResp, err := h.storage.GetVersions(c.Request.Context(), storage.ResourceIdentifier{
-		Type:      storage.ResourceTypeProvider,
+	versionsResp, err := h.storage.GetVersions(c.Request.Context(), api.ResourceIdentifier{
+		Type:      api.ResourceTypeProvider,
 		Namespace: params.Namespace,
 		Name:      params.Type,
 	})
 	if err != nil {
 		h.logger.Error("Failed to get provider versions", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
-			Errors: []string{storage.ErrProviderNotFound.Error()},
+			Errors: []string{api.ErrProviderNotFound.Error()},
 		})
 		return
 	}
@@ -174,8 +174,8 @@ func (h *RegistryHandlers) GetProviderVersion(c *gin.Context) {
 		"os", params.OS,
 		"arch", params.Arch)
 
-	downloadInfo, err := h.storage.GetDownloadInfo(c.Request.Context(), storage.ResourceIdentifier{
-		Type:      storage.ResourceTypeProvider,
+	downloadInfo, err := h.storage.GetDownloadInfo(c.Request.Context(), api.ResourceIdentifier{
+		Type:      api.ResourceTypeProvider,
 		Namespace: params.Namespace,
 		Name:      params.Type,
 		Version:   params.Version,
@@ -185,7 +185,7 @@ func (h *RegistryHandlers) GetProviderVersion(c *gin.Context) {
 	if err != nil {
 		h.logger.Error("Failed to get provider binary", "error", err)
 		c.JSON(http.StatusNotFound, models.NotFoundResponse{
-			Errors: []string{storage.ErrProviderBinaryNotFound.Error()},
+			Errors: []string{api.ErrProviderBinaryNotFound.Error()},
 		})
 		return
 	}

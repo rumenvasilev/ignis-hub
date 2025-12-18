@@ -1,8 +1,8 @@
-package storage
+package api
 
 import "errors"
 
-// Sentinel errors for storage operations
+// Sentinel errors for storage operations.
 var (
 	ErrModuleNotFound         = errors.New("module not found")
 	ErrModuleVersionNotFound  = errors.New("module version not found")
