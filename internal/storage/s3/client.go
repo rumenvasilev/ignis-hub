@@ -52,26 +52,43 @@ func New(ctx context.Context, cfg *registryConfig.Config, logger *slog.Logger) (
 	// Build AWS SDK config options
 	configOpts := []func(*config.LoadOptions) error{
 		config.WithRegion(cfg.AWS.Region),
-		config.WithCredentialsProvider(aws.CredentialsProviderFunc(func(_ context.Context) (aws.Credentials, error) {
-			logger.Debug("Using explicit credentials")
+	}
+
+	// Only use explicit credentials if they are provided
+	// Otherwise, use the default credential chain (IRSA, instance profile, env vars, etc.)
+	if cfg.AWS.AccessKeyID != "" && cfg.AWS.SecretAccessKey != "" {
+		logger.Debug("Using explicit AWS credentials from configuration")
+		configOpts = append(configOpts, config.WithCredentialsProvider(aws.CredentialsProviderFunc(func(_ context.Context) (aws.Credentials, error) {
 			return aws.Credentials{
 				AccessKeyID:     cfg.AWS.AccessKeyID,
 				SecretAccessKey: cfg.AWS.SecretAccessKey,
 				SessionToken:    cfg.AWS.SessionToken,
 				Source:          "ExplicitCredentials",
 			}, nil
-		})),
+		})))
+	} else {
+		logger.Debug("Using AWS default credential chain (supports IRSA, instance profiles, env vars, etc.)")
 	}
 
 	// Add custom endpoint for LocalStack/local development
 	if cfg.AWS.Endpoint != "" {
 		configOpts = append(configOpts, config.WithBaseEndpoint(cfg.AWS.Endpoint))
-		logger.Debug("Using custom AWS endpoint for local development")
+		logger.Debug("Using custom AWS endpoint for local development", "endpoint", cfg.AWS.Endpoint)
 	}
 
 	awsConfig, err := config.LoadDefaultConfig(ctx, configOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	// Log the credentials source for debugging
+	if logger.Enabled(context.Background(), slog.LevelDebug) {
+		creds, err := awsConfig.Credentials.Retrieve(ctx)
+		if err != nil {
+			logger.Debug("Could not retrieve AWS credentials for logging", "error", err)
+		} else {
+			logger.Debug("AWS credentials loaded successfully", "source", creds.Source)
+		}
 	}
 
 	// Configure S3 client options
