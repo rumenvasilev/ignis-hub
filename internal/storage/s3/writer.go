@@ -52,7 +52,12 @@ func (st *Storage) Upload(ctx context.Context, id api.ResourceIdentifier, filePa
 	case api.ResourceTypeModule:
 		return st.uploadModuleArchive(ctx, id.Namespace, id.Name, id.System, id.Version, filePath)
 	case api.ResourceTypeProvider:
-		return st.uploadProviderBinary(ctx, id.Namespace, id.Name, id.Version, id.OS, id.Arch, filePath)
+		switch id.FileKind {
+		case api.ProviderFileKindChecksum, api.ProviderFileKindSignature:
+			return st.uploadProviderChecksumFile(ctx, id.Namespace, id.Name, id.Version, filePath)
+		default:
+			return st.uploadProviderBinary(ctx, id.Namespace, id.Name, id.Version, id.OS, id.Arch, filePath)
+		}
 	default:
 		return fmt.Errorf("unknown resource type: %s", id.Type)
 	}
@@ -88,6 +93,50 @@ func (st *Storage) Delete(ctx context.Context, id api.ResourceIdentifier) error 
 	default:
 		return fmt.Errorf("unknown resource type: %s", id.Type)
 	}
+}
+
+// uploadProviderChecksumFile uploads a checksum file (SHA256SUMS or .sig) to storage.
+// The file is placed at providers/namespace/type/version/<filename>.
+func (st *Storage) uploadProviderChecksumFile(ctx context.Context, namespace, typeName, version, filePath string) error {
+	file, err := os.Open(filepath.Clean(filePath)) // #nosec G304 - path from trusted CLI input
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat file: %w", err)
+	}
+
+	// Calculate SHA256 for integrity validation
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return fmt.Errorf("failed to calculate checksum: %w", err)
+	}
+	checksumBase64 := base64.StdEncoding.EncodeToString(hash.Sum(nil))
+
+	// Seek back to beginning for upload
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("failed to seek file: %w", err)
+	}
+
+	// Construct key: prefix/providers/namespace/type/version/filename
+	key := fmt.Sprintf("%s/providers/%s/%s/%s/%s", st.prefix, namespace, typeName, version, fileInfo.Name())
+
+	// Upload to S3 with checksum for data integrity
+	if _, err := st.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:            aws.String(st.bucket),
+		Key:               aws.String(key),
+		Body:              file,
+		ChecksumAlgorithm: types.ChecksumAlgorithmSha256,
+		ChecksumSHA256:    aws.String(checksumBase64),
+	}); err != nil {
+		return fmt.Errorf("failed to upload to S3: %w", err)
+	}
+
+	st.logger.Info("Uploaded provider checksum file", "key", key, "size", fileInfo.Size())
+	return nil
 }
 
 // uploadProviderFile uploads the binary to S3 and returns metadata needed for the rest of the process.

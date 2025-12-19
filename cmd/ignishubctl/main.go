@@ -1091,17 +1091,35 @@ func uploadProvider(store api.Storage, namespace, typeName, version, tempDir str
 		}
 	}
 
-	// Upload checksum files (if they exist)
+	// Upload checksum files (required for Terraform provider verification)
 	checksumFile := filepath.Join(tempDir, fmt.Sprintf("terraform-provider-%s_%s_SHA256SUMS", typeName, version))
-	if _, err := os.Stat(checksumFile); err == nil {
-		fmt.Printf("  📤 Uploading checksum file...\n")
-		// Note: We'd need a method to upload checksum files, for now just log
+	if _, err := os.Stat(checksumFile); err != nil {
+		return fmt.Errorf("SHA256SUMS file not found: %s - this file is required for Terraform provider verification", checksumFile)
+	}
+	fmt.Printf("  📤 Uploading checksum file...\n")
+	if err := store.Upload(ctx, api.ResourceIdentifier{
+		Type:      api.ResourceTypeProvider,
+		Namespace: namespace,
+		Name:      typeName,
+		Version:   version,
+		FileKind:  api.ProviderFileKindChecksum,
+	}, checksumFile); err != nil {
+		return fmt.Errorf("failed to upload checksum file: %w", err)
 	}
 
 	checksumSigFile := filepath.Join(tempDir, fmt.Sprintf("terraform-provider-%s_%s_SHA256SUMS.sig", typeName, version))
-	if _, err := os.Stat(checksumSigFile); err == nil {
-		fmt.Printf("  📤 Uploading checksum signature...\n")
-		// Note: We'd need a method to upload checksum signature files
+	if _, err := os.Stat(checksumSigFile); err != nil {
+		return fmt.Errorf("SHA256SUMS.sig file not found: %s - this file is required for Terraform provider verification", checksumSigFile)
+	}
+	fmt.Printf("  📤 Uploading checksum signature...\n")
+	if err := store.Upload(ctx, api.ResourceIdentifier{
+		Type:      api.ResourceTypeProvider,
+		Namespace: namespace,
+		Name:      typeName,
+		Version:   version,
+		FileKind:  api.ProviderFileKindSignature,
+	}, checksumSigFile); err != nil {
+		return fmt.Errorf("failed to upload checksum signature file: %w", err)
 	}
 
 	// Create and upload provider metadata

@@ -16,6 +16,15 @@ const (
 	ResourceTypeProvider ResourceType = "provider"
 )
 
+// ProviderFileKind identifies the type of provider file being uploaded.
+type ProviderFileKind string
+
+const (
+	ProviderFileKindBinary    ProviderFileKind = ""          // Default: provider binary zip
+	ProviderFileKindChecksum  ProviderFileKind = "checksum"  // SHA256SUMS file
+	ProviderFileKindSignature ProviderFileKind = "signature" // SHA256SUMS.sig file
+)
+
 // ResourceIdentifier contains the parameters to identify a resource.
 type ResourceIdentifier struct {
 	Type      ResourceType
@@ -24,8 +33,9 @@ type ResourceIdentifier struct {
 	// Module-specific
 	System string
 	// Provider-specific
-	OS   string
-	Arch string
+	OS       string
+	Arch     string
+	FileKind ProviderFileKind // Type of provider file (binary, checksum, signature)
 	// Common
 	Version string
 }
