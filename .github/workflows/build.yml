@@ -63,6 +63,7 @@ jobs:
   docker-dev:
     name: Build and Push Dev Docker Image
     runs-on: ubuntu-latest
+    needs: build
     # Only run on branch pushes, NOT on PRs
     if: github.event_name == 'push'
     permissions:
@@ -72,6 +73,23 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
+
+    - name: Download Linux amd64 binary
+      uses: actions/download-artifact@v4
+      with:
+        name: ignis-hub-linux-amd64
+        path: dist
+
+    - name: Download Linux arm64 binary
+      uses: actions/download-artifact@v4
+      with:
+        name: ignis-hub-linux-arm64
+        path: dist
+
+    - name: Prepare binaries
+      run: |
+        chmod +x dist/ignis-hub-linux-*
+        ls -la dist/
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
@@ -100,4 +118,5 @@ jobs:
         tags: ${{ secrets.DOCKERHUB_USERNAME }}/ignis-hub:${{ steps.dev_build_version.outputs.VERSION }}
         build-args: |
           VERSION=${{ steps.dev_build_version.outputs.VERSION }}
+          PREBUILT=true
         file: Dockerfile
