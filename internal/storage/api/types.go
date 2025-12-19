@@ -33,9 +33,10 @@ type ResourceIdentifier struct {
 	// Module-specific
 	System string
 	// Provider-specific
-	OS       string
-	Arch     string
-	FileKind ProviderFileKind // Type of provider file (binary, checksum, signature)
+	OS          string
+	Arch        string
+	FileKind    ProviderFileKind    // Type of provider file (binary, checksum, signature)
+	SigningKeys *models.SigningKeys // Optional signing keys for provider binary uploads
 	// Common
 	Version string
 }

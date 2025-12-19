@@ -1077,15 +1077,30 @@ func uploadProvider(store api.Storage, namespace, typeName, version, tempDir str
 			return fmt.Errorf("no binary file found for %s/%s", platform.OS, platform.Arch)
 		}
 
+		// Read signing keys from downloaded metadata.json
+		var signingKeys *models.SigningKeys
+		metadataPath := filepath.Join(platformDir, "metadata.json")
+		if metadataBytes, err := os.ReadFile(metadataPath); err == nil {
+			var metadata struct {
+				SigningKeys models.SigningKeys `json:"signing_keys"`
+			}
+			if err := json.Unmarshal(metadataBytes, &metadata); err == nil {
+				if len(metadata.SigningKeys.GPGPublicKeys) > 0 {
+					signingKeys = &metadata.SigningKeys
+				}
+			}
+		}
+
 		// Upload the binary
 		fmt.Printf("  📤 Uploading %s/%s binary...\n", platform.OS, platform.Arch)
 		if err := store.Upload(ctx, api.ResourceIdentifier{
-			Type:      api.ResourceTypeProvider,
-			Namespace: namespace,
-			Name:      typeName,
-			Version:   version,
-			OS:        platform.OS,
-			Arch:      platform.Arch,
+			Type:        api.ResourceTypeProvider,
+			Namespace:   namespace,
+			Name:        typeName,
+			Version:     version,
+			OS:          platform.OS,
+			Arch:        platform.Arch,
+			SigningKeys: signingKeys,
 		}, binaryFile); err != nil {
 			return fmt.Errorf("failed to upload binary for %s/%s: %w", platform.OS, platform.Arch, err)
 		}

@@ -58,7 +58,7 @@ func (st *Storage) Upload(ctx context.Context, id api.ResourceIdentifier, filePa
 		case api.ProviderFileKindChecksum, api.ProviderFileKindSignature:
 			return st.uploadProviderChecksumFile(ctx, id.Namespace, id.Name, id.Version, filePath)
 		default:
-			return st.uploadProviderBinary(ctx, id.Namespace, id.Name, id.Version, id.OS, id.Arch, filePath)
+			return st.uploadProviderBinary(ctx, id.Namespace, id.Name, id.Version, id.OS, id.Arch, filePath, id.SigningKeys)
 		}
 	default:
 		return fmt.Errorf("unknown resource type: %s", id.Type)
@@ -196,7 +196,7 @@ func (st *Storage) uploadProviderFile(ctx context.Context, namespace, typeName, 
 }
 
 // uploadProviderBinary uploads a provider binary to api.
-func (st *Storage) uploadProviderBinary(ctx context.Context, namespace, typeName, version, osName, arch, filePath string) error {
+func (st *Storage) uploadProviderBinary(ctx context.Context, namespace, typeName, version, osName, arch, filePath string, signingKeys *models.SigningKeys) error {
 	// Upload file and compute hash - file is closed when this returns
 	filename, key, shasum, err := st.uploadProviderFile(ctx, namespace, typeName, version, osName, arch, filePath)
 	if err != nil {
@@ -206,17 +206,31 @@ func (st *Storage) uploadProviderBinary(ctx context.Context, namespace, typeName
 	// Generate download URL (standard GCS URL for VPC-internal access)
 	downloadURL := st.getObjectURL(key)
 
+	// Generate URLs for checksum files
+	checksumFilename := fmt.Sprintf("terraform-provider-%s_%s_SHA256SUMS", typeName, version)
+	checksumKey := fmt.Sprintf("%s/providers/%s/%s/%s/%s", st.prefix, namespace, typeName, version, checksumFilename)
+	shasumsURL := st.getObjectURL(checksumKey)
+
+	checksumSigFilename := fmt.Sprintf("terraform-provider-%s_%s_SHA256SUMS.sig", typeName, version)
+	checksumSigKey := fmt.Sprintf("%s/providers/%s/%s/%s/%s", st.prefix, namespace, typeName, version, checksumSigFilename)
+	shasumsSignatureURL := st.getObjectURL(checksumSigKey)
+
 	// Create platform metadata
 	platformMetadata := &models.ProviderBinaryMetadata{
-		Namespace:   namespace,
-		Type:        typeName,
-		Version:     version,
-		OS:          osName,
-		Arch:        arch,
-		Filename:    filename,
-		DownloadURL: downloadURL,
-		Shasum:      shasum,
-		Protocols:   []string{"5.0"},
+		Namespace:           namespace,
+		Type:                typeName,
+		Version:             version,
+		OS:                  osName,
+		Arch:                arch,
+		Filename:            filename,
+		DownloadURL:         downloadURL,
+		Shasum:              shasum,
+		ShasumsURL:          shasumsURL,
+		ShasumsSignatureURL: shasumsSignatureURL,
+		Protocols:           []string{"5.0"},
+	}
+	if signingKeys != nil {
+		platformMetadata.SigningKeys = *signingKeys
 	}
 
 	// Marshal to JSON
