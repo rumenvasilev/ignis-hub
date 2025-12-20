@@ -99,7 +99,7 @@ The E2E tests run automatically in CI/CD via `.github/workflows/e2e-test.yml`.
 
 ### Workflow Steps
 
-1. **Setup Go**: Install Go 1.25.3
+1. **Setup Go**: Install Go 1.25.5
 2. **Start LocalStack**: Uses [LocalStack GitHub Action](https://github.com/LocalStack/setup-localstack) for S3 emulation
 3. **Initialize S3**: Create bucket and upload test data using `awslocal`
 4. **Build & Start Registry**: Compile and launch the registry service in background
